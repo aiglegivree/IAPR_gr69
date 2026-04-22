@@ -1,0 +1,6 @@
+__pycache__/
+*.py[cod]
+
+# Lab data and generated model tensors are too large for GitHub.
+data/data_lab_03.zip
+data/data_lab_03/
