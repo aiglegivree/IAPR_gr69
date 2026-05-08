@@ -4,3 +4,5 @@ __pycache__/
 # Lab data and generated model tensors are too large for GitHub.
 data/data_lab_03.zip
 data/data_lab_03/
+project/iapr-26-uno-vision-challenge.zip
+project/iapr-26-uno-vision-challenge/
