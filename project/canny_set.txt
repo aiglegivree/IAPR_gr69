@@ -1,0 +1,4 @@
+Blur: 1
+Low: 40
+High: 59
+Min len: 210

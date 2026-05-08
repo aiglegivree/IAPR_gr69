@@ -1,0 +1,5 @@
+Threshold: 57
+Min line: 60
+Max gap: 23
+Min peri: 400
+Min size: 60
