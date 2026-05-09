@@ -1,0 +1,7 @@
+Min area: 4000
+Close size: 2
+Close iter: 10
+Min fill: 10
+Min score: 200
+Angle step: 2
+Max outside: 10
