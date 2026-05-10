@@ -5,7 +5,7 @@ from dataclasses import dataclass
 import cv2
 import numpy as np
 
-from .geometry import bbox_iou, extract_rotated_rectangle, paint_detected_mask_white
+from .geometry import extract_rotated_rectangle, paint_detected_mask_white
 from .masking import build_threshold_mask, threshold_color_image
 from .matcher import fit_card_mask_candidates
 from .special import detect_special_shapes
@@ -17,6 +17,7 @@ class CardDetectionResult:
     overlay: np.ndarray
     debug_views: list[tuple[str, np.ndarray]]
     rows: list[dict]
+    rejected: list[dict]
 
 
 def detect_cards_in_image(
@@ -31,6 +32,7 @@ def detect_cards_in_image(
     capture_debug: bool = True,
     iterative: bool = False,
     detect_special: bool = True,
+    special_settings: dict[str, int] | None = None,
     removal_make_convex: bool = True,
     show_progress: bool = False,
 ) -> CardDetectionResult:
@@ -40,25 +42,34 @@ def detect_cards_in_image(
     debug_views: list[tuple[str, np.ndarray]] = []
     cards: list[tuple[str, np.ndarray]] = []
     rows: list[dict] = []
+    rejected: list[dict] = []
     rank = 1
     matching_scale = 0.25
 
     if detect_special:
         progress.step("Detecting specials")
-        for special in detect_special_shapes(image_bgr, color_thresholds, rectangle_settings, card_template_mask, scale=scale):
+        for special in detect_special_shapes(
+            image_bgr,
+            color_thresholds,
+            rectangle_settings,
+            card_template_mask,
+            scale=scale,
+            special_settings=special_settings,
+        ):
             draw_special_detection(overlay, special)
             rows.append({"rank": rank, **special})
             paint_special_detection_white(cleaned_image_bgr, special, scale=scale)
             rank += 1
 
     card_colors = black_first(colors)
-    last_removal_mask = None
     overlay_factor = scale / matching_scale
+    base_card_image_bgr = cleaned_image_bgr.copy()
 
     for color_name in card_colors:
+        color_image_bgr = base_card_image_bgr.copy()
         progress.step(f"Collecting {color_name} candidates")
         candidates = collect_candidates(
-            cleaned_image_bgr,
+            color_image_bgr,
             color_thresholds,
             rectangle_settings,
             card_template_mask,
@@ -68,12 +79,13 @@ def detect_cards_in_image(
             debug_views if capture_debug else None,
             progress=progress,
             label=f"{color_name} candidates",
+            rejected=rejected,
         )
         while candidates:
             color, score, box, bbox, _, fill_ratio, detected_card_mask, outside_ratio = candidates.pop(0)
             progress.step(f"Extracting #{rank} {color}")
             row = handle_card_candidate(
-                cleaned_image_bgr,
+                color_image_bgr,
                 overlay,
                 cards,
                 color_thresholds,
@@ -90,15 +102,15 @@ def detect_cards_in_image(
                 removal_make_convex,
             )
             if row is not None:
+                row.pop("_removal_mask")
                 rows.append(row)
-                last_removal_mask = row.pop("_removal_mask")
                 rank += 1
             else:
-                last_removal_mask = paint_detected_mask_white(cleaned_image_bgr, detected_card_mask, scale=matching_scale, make_convex=removal_make_convex)
-        if color_name == "black" and capture_debug:
-            append_black_removal_debug(debug_views, cleaned_image_bgr, last_removal_mask, scale)
+                paint_detected_mask_white(color_image_bgr, detected_card_mask, scale=matching_scale, make_convex=removal_make_convex)
+        if color_name == "black":
+            base_card_image_bgr = color_image_bgr.copy()
 
-    return CardDetectionResult(cards=cards, overlay=overlay, debug_views=debug_views, rows=rows)
+    return CardDetectionResult(cards=cards, overlay=overlay, debug_views=debug_views, rows=rows, rejected=rejected)
 
 
 class DetectionProgress:
@@ -193,6 +205,7 @@ def collect_candidates(
     debug_views: list[tuple[str, np.ndarray]] | None,
     progress: DetectionProgress | None = None,
     label: str = "candidates",
+    rejected: list[dict] | None = None,
 ):
     all_candidates = []
     color_iter = progress.iter_colors(colors, label) if progress is not None else colors
@@ -204,28 +217,58 @@ def collect_candidates(
         small_mask = cv2.resize(processed_mask, None, fx=scale, fy=scale, interpolation=cv2.INTER_NEAREST)
         if progress is not None:
             progress.step(f"{label}: template matching {color}")
-        if debug_views is None:
-            candidates = fit_card_mask_candidates(small_mask, rectangle_settings, card_template_mask)
-            remaining_mask = None
-        else:
-            candidates, remaining_mask, _ = fit_card_mask_candidates(
+        if debug_views is not None or rejected is not None:
+            candidates, remaining_mask, all_taken_candidates = fit_card_mask_candidates(
                 small_mask,
                 rectangle_settings,
                 card_template_mask,
                 return_debug=True,
             )
+        else:
+            candidates = fit_card_mask_candidates(small_mask, rectangle_settings, card_template_mask)
+            remaining_mask = None
+            all_taken_candidates = candidates
         if debug_views is not None:
             debug_views.append((f"{color} threshold", resize_debug_view(raw_mask, scale)))
             debug_views.append((f"{color} area+close", small_mask))
             debug_views.append((f"{color} remaining after fit", remaining_mask))
-        unique_color_candidates = []
+        accepted_ids = {id(candidate) for candidate in candidates}
+        if rejected is not None:
+            for candidate in all_taken_candidates:
+                if id(candidate) not in accepted_ids:
+                    rejected.append(rejected_candidate_row(color, candidate, candidate_rejection_reason(candidate, rectangle_settings)))
         for candidate in sorted(candidates, key=lambda item: item[0], reverse=True):
-            if all(bbox_iou(candidate[2], kept[2]) < iou_threshold for kept in unique_color_candidates):
-                unique_color_candidates.append(candidate_with_detected_mask(candidate, small_mask))
-        for candidate in unique_color_candidates:
-            all_candidates.append((color, *candidate))
+            all_candidates.append((color, *candidate_with_detected_mask(candidate, small_mask)))
 
     return all_candidates
+
+
+def rejected_candidate_row(color: str, candidate, reason: str) -> dict:
+    score, _, bbox, template_size, fill_ratio, _, outside_ratio = candidate
+    return {
+        "color": color,
+        "reason": reason,
+        "score": score,
+        "fill": fill_ratio,
+        "outside": outside_ratio,
+        "bbox": bbox,
+        "template_size": template_size,
+    }
+
+
+def candidate_rejection_reason(candidate, settings: dict[str, int]) -> str:
+    score, _, _, _, fill_ratio, _, outside_ratio = candidate
+    reasons = []
+    min_score = float(settings.get("min_score", 0))
+    min_fill = settings["min_fill"] / 100.0
+    max_outside = settings.get("max_outside", 100) / 100.0
+    if score < min_score:
+        reasons.append(f"score {score:.2f} < min_score {min_score:.2f}")
+    if fill_ratio < min_fill:
+        reasons.append(f"fill {fill_ratio:.2f} < min_fill {min_fill:.2f}")
+    if outside_ratio > max_outside:
+        reasons.append(f"outside {outside_ratio:.2f} > max_outside {max_outside:.2f}")
+    return "; ".join(reasons) if reasons else "rejected by matcher"
 
 
 def candidate_with_detected_mask(candidate, color_mask: np.ndarray):

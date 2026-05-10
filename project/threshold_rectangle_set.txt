@@ -1,7 +1,8 @@
-Min area: 4000
+Min area: 1000
 Close size: 2
-Close iter: 10
-Min fill: 19
-Min score: 0
+Close iter: 0
+Min fill: 15
+Min score: 150
 Angle step: 2
 Max outside: 10
+Max candidates per region: 12

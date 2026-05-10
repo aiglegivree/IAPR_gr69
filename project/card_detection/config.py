@@ -38,6 +38,10 @@ class CardDetectionPaths:
         return self.base_dir / "threshold_rectangle_set.txt"
 
     @property
+    def special_settings(self) -> Path:
+        return self.base_dir / "special_detection_set.txt"
+
+    @property
     def rectangle_settings(self) -> Path:
         return self.base_dir / "hough_set.txt"
 

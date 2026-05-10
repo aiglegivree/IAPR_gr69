@@ -123,6 +123,7 @@ def best_template_candidate(
     component_mask: np.ndarray,
     templates: list[tuple[np.ndarray, np.ndarray, int, int, int]],
     min_fill: float,
+    max_candidates_per_region: int,
     outside_debug: list[tuple[str, np.ndarray]] | None = None,
 ):
     if np.count_nonzero(component_mask) == 0:
@@ -142,7 +143,7 @@ def best_template_candidate(
                 continue
             response = response / (255.0 * 255.0 * template_area)
             response = np.nan_to_num(response, nan=0.0, posinf=0.0, neginf=0.0)
-            for local_location in top_response_locations(response, min_fill, max_candidates=6, suppression_radius=max(th, tw) // 4):
+            for local_location in top_response_locations(response, min_fill, max_candidates=max_candidates_per_region, suppression_radius=max(th, tw) // 4):
                 max_location = (local_location[0] + x0, local_location[1] + y0)
                 candidate = candidate_from_template(component_mask, rotated_template, rotated_corners, max_location)
                 if candidate is None or candidate[4] < min_fill:
@@ -210,12 +211,13 @@ def fit_card_mask_candidates(
     max_outside = settings.get("max_outside", 100) / 100.0
     min_score = float(settings.get("min_score", 0))
     angle_step = max(1, int(settings.get("angle_step", 10)))
+    max_candidates_per_region = max(1, int(settings.get("max_candidates_per_region", 12)))
     templates = rotated_templates(card_template_mask, angle_step)
     remaining_mask = mask.copy()
     candidates = []
 
     while True:
-        candidate = best_template_candidate(remaining_mask, templates, min_fill, outside_debug)
+        candidate = best_template_candidate(remaining_mask, templates, min_fill, max_candidates_per_region, outside_debug)
         if candidate is None or candidate[0] < min_score:
             break
         before_pixels = int(np.count_nonzero(remaining_mask))
@@ -225,10 +227,18 @@ def fit_card_mask_candidates(
         if after_pixels >= before_pixels:
             break
     accepted_candidates = [candidate for candidate in candidates if candidate[6] <= max_outside]
+    accepted_remaining_mask = remove_candidates(mask, accepted_candidates)
 
     if return_debug:
-        return accepted_candidates, remaining_mask, candidates.copy()
+        return accepted_candidates, accepted_remaining_mask, candidates.copy()
     return accepted_candidates
+
+
+def remove_candidates(mask: np.ndarray, candidates: list) -> np.ndarray:
+    remaining = mask.copy()
+    for candidate in candidates:
+        remaining = remove_confirmed_candidate(remaining, candidate)
+    return remaining
 
 
 def detect_rectangles(mask: np.ndarray, settings: dict[str, int], card_template_mask: np.ndarray, scale: float = 0.25):

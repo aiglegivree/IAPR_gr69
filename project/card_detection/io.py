@@ -7,6 +7,7 @@ import cv2
 import numpy as np
 
 from .config import DEFAULT_COLORS, IMAGE_EXTENSIONS, CardDetectionPaths
+from .special import DEFAULT_SPECIAL_SETTINGS
 
 
 HSV_ARRAY_PATTERN = re.compile(r"np\.array\(\s*\[([^\]]+)\]\s*\)")
@@ -54,19 +55,21 @@ def save_gray_threshold(path: Path, settings: dict[str, int]) -> None:
 def load_color_thresholds(paths: CardDetectionPaths, colors: tuple[str, ...] = DEFAULT_COLORS) -> dict[str, dict]:
     thresholds = {}
     for color in colors:
+        hsv_path = paths.hsv_file(color)
         gray_path = paths.gray_file(color)
-        if color == "black" and gray_path.exists():
+        if hsv_path.exists():
+            thresholds[color] = {"mode": "hsv", "ranges": parse_hsv_file(hsv_path)}
+            if color == "black" and gray_path.exists():
+                thresholds[color]["settings"] = load_gray_threshold(gray_path)
+        elif color == "black" and gray_path.exists():
             thresholds[color] = {"mode": "gray", "settings": load_gray_threshold(gray_path)}
-            hsv_path = paths.hsv_file(color)
-            if hsv_path.exists():
-                thresholds[color]["hsv_ranges"] = parse_hsv_file(hsv_path)
         else:
-            thresholds[color] = {"mode": "hsv", "ranges": parse_hsv_file(paths.hsv_file(color))}
+            thresholds[color] = {"mode": "hsv", "ranges": parse_hsv_file(hsv_path)}
     return thresholds
 
 
 def load_rectangle_settings(path: Path) -> dict[str, int]:
-    defaults = {"min_fill": 35, "min_score": 0, "angle_step": 10, "max_outside": 100}
+    defaults = {"min_fill": 35, "min_score": 0, "angle_step": 10, "max_outside": 100, "max_candidates_per_region": 12}
     if not path.exists():
         return defaults
     parsed = _parse_int_settings(path)
@@ -91,7 +94,34 @@ def save_threshold_rectangle_settings(path: Path, settings: dict[str, int]) -> N
         f"Min fill: {settings['min_fill']}\n"
         f"Min score: {settings['min_score']}\n"
         f"Angle step: {settings['angle_step']}\n"
-        f"Max outside: {settings['max_outside']}\n",
+        f"Max outside: {settings['max_outside']}\n"
+        f"Max candidates per region: {settings.get('max_candidates_per_region', 12)}\n",
+        encoding="utf-8",
+    )
+
+
+def load_special_settings(path: Path) -> dict[str, int]:
+    defaults = DEFAULT_SPECIAL_SETTINGS.copy()
+    if not path.exists():
+        return defaults
+    parsed = _parse_int_settings(path)
+    defaults.update({key: parsed[key] for key in defaults if key in parsed})
+    return defaults
+
+
+def save_special_settings(path: Path, settings: dict[str, int]) -> None:
+    merged = DEFAULT_SPECIAL_SETTINGS.copy()
+    merged.update({key: int(value) for key, value in settings.items() if key in merged})
+    path.write_text(
+        f"Yellow min area: {merged['yellow_min_area']}\n"
+        f"Yellow min radius: {merged['yellow_min_radius']}\n"
+        f"Yellow min circularity: {merged['yellow_min_circularity']}\n"
+        f"Yellow min fill: {merged['yellow_min_fill']}\n"
+        f"Black min area: {merged['black_min_area']}\n"
+        f"Black min fill: {merged['black_min_fill']}\n"
+        f"Black max long side: {merged['black_max_long_side']}\n"
+        f"Black min short side: {merged['black_min_short_side']}\n"
+        f"Black max aspect: {merged['black_max_aspect']}\n",
         encoding="utf-8",
     )
 

@@ -1,0 +1,9 @@
+Yellow min area: 1000
+Yellow min radius: 15
+Yellow min circularity: 60
+Yellow min fill: 68
+Black min area: 1000
+Black min fill: 80
+Black max long side: 80
+Black min short side: 30
+Black max aspect: 3
