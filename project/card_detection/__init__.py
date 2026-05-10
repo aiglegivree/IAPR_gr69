@@ -22,6 +22,7 @@ from .masking import (
 )
 from .matcher import detect_rectangles, fit_card_mask_candidates
 from .pipeline import CardDetectionResult, detect_cards_in_image
+from .reference_export import create_reference_card_labeler, display_reference_card_labeler
 from .special import detect_black_rectangle, detect_special_shapes, detect_yellow_circle, remaining_after_card_fits
 from .tuner import create_threshold_tuner
 from .visualization import show_detection_result, show_images
@@ -33,11 +34,13 @@ __all__ = [
     "build_threshold_mask",
     "close_mask",
     "create_threshold_tuner",
+    "create_reference_card_labeler",
     "detect_cards_in_image",
     "detect_black_rectangle",
     "detect_rectangles",
     "detect_special_shapes",
     "detect_yellow_circle",
+    "display_reference_card_labeler",
     "filter_small_components",
     "fit_card_mask_candidates",
     "load_card_template",

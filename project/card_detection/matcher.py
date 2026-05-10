@@ -28,11 +28,17 @@ def _rotate_template_cached(template_bytes: bytes, shape: tuple[int, int], angle
     return cv2.threshold(rotated, 127, 255, cv2.THRESH_BINARY)[1], rotated_corners
 
 
-def rotated_templates(template_mask: np.ndarray, angle_step: int) -> list[tuple[np.ndarray, np.ndarray]]:
+def rotated_templates(template_mask: np.ndarray, angle_step: int) -> list[tuple[np.ndarray, np.ndarray, int, int, int]]:
     prepared = prepare_template_mask(template_mask)
     template_bytes = prepared.tobytes()
     shape = prepared.shape
-    return [_rotate_template_cached(template_bytes, shape, angle) for angle in range(-90, 91, angle_step)]
+    templates = []
+    for angle in range(-90, 91, angle_step):
+        rotated_template, rotated_corners = _rotate_template_cached(template_bytes, shape, angle)
+        template_height, template_width = rotated_template.shape[:2]
+        template_area = max(1, int(np.count_nonzero(rotated_template)))
+        templates.append((rotated_template, rotated_corners, template_area, template_height, template_width))
+    return templates
 
 
 def candidate_from_template(component_mask: np.ndarray, rotated_template: np.ndarray, rotated_corners: np.ndarray, top_left: tuple[int, int]):
@@ -60,48 +66,146 @@ def remove_confirmed_candidate(mask: np.ndarray, candidate) -> np.ndarray:
     return remaining
 
 
-def outside_rectangle_ratio(labels: np.ndarray, box: np.ndarray) -> float:
-    rectangle_mask = np.zeros(labels.shape, dtype=np.uint8)
-    box_int = box.astype(np.int32).reshape(-1, 1, 2)
-    cv2.fillConvexPoly(rectangle_mask, box_int, 255)
-    overlapping_labels = np.unique(labels[(rectangle_mask > 0) & (labels > 0)])
+def outside_template_details(labels: np.ndarray, placed_template: np.ndarray, tolerance: int = 2):
+    template_mask = cv2.threshold(placed_template, 127, 255, cv2.THRESH_BINARY)[1]
+    if tolerance > 0:
+        kernel_size = 2 * tolerance + 1
+        kernel = np.ones((kernel_size, kernel_size), dtype=np.uint8)
+        template_mask = cv2.dilate(template_mask, kernel)
+    overlapping_labels = np.unique(labels[(template_mask > 0) & (labels > 0)])
     if overlapping_labels.size == 0:
-        return 0.0
+        empty = np.zeros(labels.shape, dtype=bool)
+        return 0.0, empty, template_mask, empty
     blob_mask = np.isin(labels, overlapping_labels)
     total_pixels = int(np.count_nonzero(blob_mask))
-    outside_pixels = int(np.count_nonzero(blob_mask & (rectangle_mask == 0)))
-    return outside_pixels / total_pixels if total_pixels > 0 else 0.0
+    outside_mask = blob_mask & (template_mask == 0)
+    outside_pixels = int(np.count_nonzero(outside_mask))
+    ratio = outside_pixels / total_pixels if total_pixels > 0 else 0.0
+    return ratio, blob_mask, template_mask, outside_mask
 
 
-def best_template_candidate(component_mask: np.ndarray, templates: list[tuple[np.ndarray, np.ndarray]], min_fill: float, max_outside: float):
+def outside_template_ratio(labels: np.ndarray, placed_template: np.ndarray, tolerance: int = 2) -> float:
+    ratio, _, _, _ = outside_template_details(labels, placed_template, tolerance)
+    return ratio
+
+
+def local_outside_details(component_mask: np.ndarray, inside_mask: np.ndarray, candidate_mask: np.ndarray):
+    local_mask = cv2.bitwise_and(component_mask, candidate_mask) > 0
+    inside = inside_mask > 0
+    total_pixels = int(np.count_nonzero(local_mask))
+    outside_mask = local_mask & ~inside
+    outside_pixels = int(np.count_nonzero(outside_mask))
+    ratio = outside_pixels / total_pixels if total_pixels > 0 else 0.0
+    return ratio, local_mask, inside_mask, outside_mask
+
+
+def candidate_rectangle_mask(shape: tuple[int, int], box: np.ndarray) -> np.ndarray:
+    rectangle_mask = np.zeros(shape, dtype=np.uint8)
+    box_int = box.astype(np.int32).reshape(-1, 1, 2)
+    cv2.fillConvexPoly(rectangle_mask, box_int, 255)
+    return rectangle_mask
+
+
+def outside_rectangle_ratio(labels: np.ndarray, box: np.ndarray) -> float:
+    rectangle_mask = candidate_rectangle_mask(labels.shape, box)
+    return outside_template_ratio(labels, rectangle_mask, tolerance=0)
+
+
+def outside_debug_image(component_mask: np.ndarray, blob_mask: np.ndarray, template_mask: np.ndarray, outside_mask: np.ndarray) -> np.ndarray:
+    debug = np.repeat(component_mask[:, :, None], 3, axis=2)
+    debug[blob_mask] = (80, 80, 255)
+    debug[template_mask > 0] = (0, 220, 0)
+    debug[outside_mask] = (255, 0, 0)
+    return debug
+
+
+def best_template_candidate(
+    component_mask: np.ndarray,
+    templates: list[tuple[np.ndarray, np.ndarray, int, int, int]],
+    min_fill: float,
+    outside_debug: list[tuple[str, np.ndarray]] | None = None,
+):
     if np.count_nonzero(component_mask) == 0:
         return None
-    _, labels, _, _ = cv2.connectedComponentsWithStats(component_mask, connectivity=8)
+    _, labels, stats, _ = cv2.connectedComponentsWithStats(component_mask, connectivity=8)
     best = None
-    for rotated_template, rotated_corners in templates:
-        th, tw = rotated_template.shape[:2]
+    search_regions = component_search_regions(stats, component_mask.shape)
+    for rotated_template, rotated_corners, template_area, th, tw in templates:
         if th > component_mask.shape[0] or tw > component_mask.shape[1]:
             continue
-        response = cv2.matchTemplate(component_mask, rotated_template, cv2.TM_CCORR)
-        if response.size == 0:
-            continue
-        template_area = max(1, int(np.count_nonzero(rotated_template)))
-        response = response / (255.0 * 255.0 * template_area)
-        response = np.nan_to_num(response, nan=0.0, posinf=0.0, neginf=0.0)
-        _, max_value, _, max_location = cv2.minMaxLoc(response)
-        if max_value < min_fill:
-            continue
-        candidate = candidate_from_template(component_mask, rotated_template, rotated_corners, max_location)
-        if candidate is None or candidate[4] < min_fill:
-            continue
-        if outside_rectangle_ratio(labels, candidate[1]) > max_outside:
-            continue
-        if best is None or candidate[0] > best[0]:
-            best = candidate
+        for x0, y0, x1, y1 in search_regions:
+            roi = component_mask[y0:y1, x0:x1]
+            if th > roi.shape[0] or tw > roi.shape[1]:
+                continue
+            response = cv2.matchTemplate(roi, rotated_template, cv2.TM_CCORR)
+            if response.size == 0:
+                continue
+            response = response / (255.0 * 255.0 * template_area)
+            response = np.nan_to_num(response, nan=0.0, posinf=0.0, neginf=0.0)
+            for local_location in top_response_locations(response, min_fill, max_candidates=6, suppression_radius=max(th, tw) // 4):
+                max_location = (local_location[0] + x0, local_location[1] + y0)
+                candidate = candidate_from_template(component_mask, rotated_template, rotated_corners, max_location)
+                if candidate is None or candidate[4] < min_fill:
+                    continue
+                outside_ratio = outside_rectangle_ratio(labels, candidate[1])
+                candidate = (*candidate, outside_ratio)
+                if best is None or candidate[0] > best[0]:
+                    best = candidate
     return best
 
 
-def fit_card_mask_candidates(mask: np.ndarray, settings: dict[str, int], card_template_mask: np.ndarray, return_debug: bool = False):
+def component_search_regions(stats: np.ndarray, image_shape: tuple[int, int], min_pixels: int = 25) -> list[tuple[int, int, int, int]]:
+    height, width = image_shape
+    regions = []
+    for label in range(1, stats.shape[0]):
+        x, y, w, h, area = stats[label]
+        if area < min_pixels:
+            continue
+        pad = max(w, h)
+        x0 = max(0, int(x - pad))
+        y0 = max(0, int(y - pad))
+        x1 = min(width, int(x + w + pad))
+        y1 = min(height, int(y + h + pad))
+        regions.append((x0, y0, x1, y1))
+    return merge_search_regions(regions)
+
+
+def merge_search_regions(regions: list[tuple[int, int, int, int]]) -> list[tuple[int, int, int, int]]:
+    merged: list[tuple[int, int, int, int]] = []
+    for region in sorted(regions, key=lambda item: (item[1], item[0])):
+        rx0, ry0, rx1, ry1 = region
+        for index, (x0, y0, x1, y1) in enumerate(merged):
+            if rx0 <= x1 and rx1 >= x0 and ry0 <= y1 and ry1 >= y0:
+                merged[index] = (min(x0, rx0), min(y0, ry0), max(x1, rx1), max(y1, ry1))
+                break
+        else:
+            merged.append(region)
+    return merged
+
+
+def top_response_locations(response: np.ndarray, min_value: float, max_candidates: int, suppression_radius: int):
+    remaining = response.copy()
+    radius = max(1, int(suppression_radius))
+    for _ in range(max_candidates):
+        _, max_value, _, max_location = cv2.minMaxLoc(remaining)
+        if max_value < min_value:
+            break
+        yield max_location
+        x, y = max_location
+        x0 = max(0, x - radius)
+        y0 = max(0, y - radius)
+        x1 = min(remaining.shape[1], x + radius + 1)
+        y1 = min(remaining.shape[0], y + radius + 1)
+        remaining[y0:y1, x0:x1] = 0.0
+
+
+def fit_card_mask_candidates(
+    mask: np.ndarray,
+    settings: dict[str, int],
+    card_template_mask: np.ndarray,
+    return_debug: bool = False,
+    outside_debug: list[tuple[str, np.ndarray]] | None = None,
+):
     min_fill = settings["min_fill"] / 100.0
     max_outside = settings.get("max_outside", 100) / 100.0
     min_score = float(settings.get("min_score", 0))
@@ -111,7 +215,7 @@ def fit_card_mask_candidates(mask: np.ndarray, settings: dict[str, int], card_te
     candidates = []
 
     while True:
-        candidate = best_template_candidate(remaining_mask, templates, min_fill, max_outside)
+        candidate = best_template_candidate(remaining_mask, templates, min_fill, outside_debug)
         if candidate is None or candidate[0] < min_score:
             break
         before_pixels = int(np.count_nonzero(remaining_mask))
@@ -120,10 +224,11 @@ def fit_card_mask_candidates(mask: np.ndarray, settings: dict[str, int], card_te
         after_pixels = int(np.count_nonzero(remaining_mask))
         if after_pixels >= before_pixels:
             break
+    accepted_candidates = [candidate for candidate in candidates if candidate[6] <= max_outside]
 
     if return_debug:
-        return candidates, remaining_mask, candidates.copy()
-    return candidates
+        return accepted_candidates, remaining_mask, candidates.copy()
+    return accepted_candidates
 
 
 def detect_rectangles(mask: np.ndarray, settings: dict[str, int], card_template_mask: np.ndarray, scale: float = 0.25):

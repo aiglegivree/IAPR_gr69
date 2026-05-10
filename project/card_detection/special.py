@@ -3,7 +3,7 @@ from __future__ import annotations
 import cv2
 import numpy as np
 
-from .masking import build_threshold_mask, threshold_color_image
+from .masking import build_threshold_mask, threshold_color_image, threshold_gray_image, threshold_hsv_image
 from .matcher import fit_card_mask_candidates
 
 
@@ -14,6 +14,16 @@ def detect_special_shapes(
     card_template_mask: np.ndarray,
     scale: float = 0.25,
 ) -> list[dict]:
+    yellow_mask = scaled_color_mask(image_bgr, "yellow", color_thresholds, rectangle_settings, scale)
+    yellow_circle = detect_yellow_circle(yellow_mask)
+    if yellow_circle is not None:
+        return [yellow_circle]
+
+    black_mask = scaled_color_mask(image_bgr, "black", color_thresholds, rectangle_settings, scale)
+    black_rectangle = detect_black_rectangle(black_mask)
+    if black_rectangle is not None:
+        return [black_rectangle]
+
     yellow_remaining = remaining_after_card_fits(image_bgr, "yellow", color_thresholds, rectangle_settings, card_template_mask, scale)
     yellow_circle = detect_yellow_circle(yellow_remaining)
     if yellow_circle is not None:
@@ -24,6 +34,25 @@ def detect_special_shapes(
     return [] if black_rectangle is None else [black_rectangle]
 
 
+def scaled_color_mask(
+    image_bgr: np.ndarray,
+    color: str,
+    color_thresholds: dict[str, dict],
+    rectangle_settings: dict[str, int],
+    scale: float,
+) -> np.ndarray:
+    threshold = color_thresholds[color]
+    if color == "black" and "hsv_ranges" in threshold:
+        raw_mask = cv2.bitwise_or(
+            threshold_hsv_image(image_bgr, threshold["hsv_ranges"]),
+            threshold_gray_image(image_bgr, 0, 130),
+        )
+    else:
+        raw_mask = threshold_color_image(image_bgr, threshold)
+    processed_mask = build_threshold_mask(raw_mask, rectangle_settings)
+    return cv2.resize(processed_mask, None, fx=scale, fy=scale, interpolation=cv2.INTER_NEAREST)
+
+
 def remaining_after_card_fits(
     image_bgr: np.ndarray,
     color: str,
@@ -32,9 +61,7 @@ def remaining_after_card_fits(
     card_template_mask: np.ndarray,
     scale: float,
 ) -> np.ndarray:
-    raw_mask = threshold_color_image(image_bgr, color_thresholds[color])
-    processed_mask = build_threshold_mask(raw_mask, rectangle_settings)
-    small_mask = cv2.resize(processed_mask, None, fx=scale, fy=scale, interpolation=cv2.INTER_NEAREST)
+    small_mask = scaled_color_mask(image_bgr, color, color_thresholds, rectangle_settings, scale)
     _, remaining_mask, _ = fit_card_mask_candidates(small_mask, rectangle_settings, card_template_mask, return_debug=True)
     return remaining_mask
 

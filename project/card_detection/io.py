@@ -57,6 +57,9 @@ def load_color_thresholds(paths: CardDetectionPaths, colors: tuple[str, ...] = D
         gray_path = paths.gray_file(color)
         if color == "black" and gray_path.exists():
             thresholds[color] = {"mode": "gray", "settings": load_gray_threshold(gray_path)}
+            hsv_path = paths.hsv_file(color)
+            if hsv_path.exists():
+                thresholds[color]["hsv_ranges"] = parse_hsv_file(hsv_path)
         else:
             thresholds[color] = {"mode": "hsv", "ranges": parse_hsv_file(paths.hsv_file(color))}
     return thresholds

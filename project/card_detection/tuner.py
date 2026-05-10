@@ -93,15 +93,15 @@ def create_threshold_tuner(
         all_candidates_overlay = overlay.copy()
         candidates, remaining_mask, all_taken_candidates = fit_card_mask_candidates(small_mask, settings, card_template_mask, return_debug=True)
 
-        for rank, (_, box, (x, y, _, _), _, _, _) in enumerate(all_taken_candidates, start=1):
+        for rank, (_, box, (x, y, _, _), _, _, _, outside_ratio) in enumerate(all_taken_candidates, start=1):
             box_int = box.astype(np.int32).reshape(-1, 1, 2)
             cv2.polylines(all_candidates_overlay, [box_int], True, (255, 165, 0), 4)
-            cv2.putText(all_candidates_overlay, f"{rank}", (x, max(22, y - 8)), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 165, 0), 2, cv2.LINE_AA)
+            cv2.putText(all_candidates_overlay, f"{rank} out={outside_ratio:.2f}", (x, max(22, y - 8)), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 165, 0), 2, cv2.LINE_AA)
 
-        for rank, (_, box, (x, y, _, _), _, _, _) in enumerate(candidates, start=1):
+        for rank, (_, box, (x, y, _, _), _, _, _, outside_ratio) in enumerate(candidates, start=1):
             box_int = box.astype(np.int32).reshape(-1, 1, 2)
             cv2.polylines(overlay, [box_int], True, (255, 0, 0), 4)
-            cv2.putText(overlay, f"#{rank}", (x, max(24, y - 10)), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (255, 0, 0), 2, cv2.LINE_AA)
+            cv2.putText(overlay, f"#{rank} out={outside_ratio:.2f}", (x, max(24, y - 10)), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 0, 0), 2, cv2.LINE_AA)
 
         preview.clear_output(wait=True)
         with preview:
@@ -129,8 +129,11 @@ def create_threshold_tuner(
             print(f"Mask pixels: {int(np.count_nonzero(small_mask))}")
             print(f"All candidates taken: {len(all_taken_candidates)}")
             print(f"Confirmed detections: {len(candidates)}")
-            for rank, (score, _, (x, y, w, h), (rect_width, rect_height), fill_ratio, _) in enumerate(candidates, start=1):
-                print(f"#{rank}: score={score:.2f}, fill={fill_ratio:.2f}, rect=(width={rect_width:.1f}, height={rect_height:.1f}), bbox=(x={x}, y={y}, w={w}, h={h})")
+            for rank, (score, _, (x, y, w, h), (rect_width, rect_height), fill_ratio, _, outside_ratio) in enumerate(candidates, start=1):
+                print(
+                    f"#{rank}: score={score:.2f}, fill={fill_ratio:.2f}, outside={outside_ratio:.2f}, "
+                    f"rect=(width={rect_width:.1f}, height={rect_height:.1f}), bbox=(x={x}, y={y}, w={w}, h={h})"
+                )
 
     def save_threshold_settings(_):
         if use_gray_threshold:
