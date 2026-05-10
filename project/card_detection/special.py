@@ -8,8 +8,8 @@ from .matcher import fit_card_mask_candidates
 
 
 DEFAULT_SPECIAL_SETTINGS = {
-    "yellow_min_area": 40,
     "yellow_min_radius": 4,
+    "yellow_max_radius": 100,
     "yellow_min_circularity": 65,
     "yellow_min_fill": 45,
     "black_min_area": 25,
@@ -88,39 +88,37 @@ def remaining_after_card_fits(
 
 def detect_yellow_circle(mask: np.ndarray, settings: dict[str, int] | None = None) -> dict | None:
     settings = merged_special_settings(settings)
-    min_area = float(settings["yellow_min_area"])
     min_radius = float(settings["yellow_min_radius"])
+    max_radius = float(settings["yellow_max_radius"])
     min_circularity = settings["yellow_min_circularity"] / 100.0
     min_fill = settings["yellow_min_fill"] / 100.0
     contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     best = None
     for contour in contours:
         area = cv2.contourArea(contour)
-        if area < min_area:
-            continue
         perimeter = cv2.arcLength(contour, True)
         if perimeter <= 0:
             continue
         circularity = 4.0 * np.pi * area / (perimeter * perimeter)
         (cx, cy), radius = cv2.minEnclosingCircle(contour)
-        if radius < min_radius or circularity < min_circularity:
+        if radius < min_radius or radius > max_radius or circularity < min_circularity:
             continue
         circle_area = np.pi * radius * radius
         fill = area / circle_area if circle_area > 0 else 0.0
         if fill < min_fill:
             continue
-        score = area * circularity * fill
         candidate = {
             "kind": "yellow_circle",
             "color": "yellow",
-            "score": score,
+            "score": 0.0,
             "center": (float(cx), float(cy)),
             "radius": float(radius),
             "bbox": cv2.boundingRect(contour),
             "fill": float(fill),
             "circularity": float(circularity),
+            "area": float(area),
         }
-        if best is None or candidate["score"] > best["score"]:
+        if best is None or (candidate["fill"], candidate["area"]) > (best["fill"], best["area"]):
             best = candidate
     return best
 
@@ -149,18 +147,18 @@ def detect_black_rectangle(mask: np.ndarray, settings: dict[str, int] | None = N
         aspect = long_side / max(short_side, 1e-6)
         if fill < min_fill or long_side > max_long_side or short_side < min_short_side or aspect > max_aspect:
             continue
-        score = area * fill
         candidate = {
             "kind": "black_rectangle",
             "color": "black",
-            "score": score,
+            "score": 0.0,
             "center": (float(cx), float(cy)),
             "size": (float(width), float(height)),
             "angle": float(angle),
             "bbox": cv2.boundingRect(contour),
             "fill": float(fill),
             "box": cv2.boxPoints(rect).astype(np.float32).reshape(-1, 1, 2),
+            "area": float(area),
         }
-        if best is None or candidate["score"] > best["score"]:
+        if best is None or candidate["area"] > best["area"]:
             best = candidate
     return best

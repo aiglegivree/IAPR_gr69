@@ -11,6 +11,7 @@ from .matcher import fit_card_mask_candidates
 from .special import (
     detect_black_rectangle,
     detect_yellow_circle,
+    merged_special_settings,
     remaining_after_card_fits,
     scaled_color_mask,
 )
@@ -229,14 +230,21 @@ def create_special_tuner(
     except ImportError as exc:
         raise ImportError("ipywidgets is required for the tuner") from exc
 
+    special_settings = merged_special_settings(special_settings)
     clear_output(wait=True)
 
     yellow_hsv_controls = create_hsv_controls("Y", color_thresholds["yellow"]["ranges"])
     black_gray_settings = color_thresholds["black"].get("settings", {"low": 0, "high": 100})
     black_gray_slider = widgets.IntRangeSlider(value=(black_gray_settings["low"], black_gray_settings["high"]), min=0, max=255, step=1, description="B gray")
 
-    yellow_min_area = widgets.IntSlider(value=special_settings["yellow_min_area"], min=0, max=1000, step=5, description="Y area")
-    yellow_min_radius = widgets.IntSlider(value=special_settings["yellow_min_radius"], min=1, max=50, step=1, description="Y radius")
+    yellow_radius = widgets.IntRangeSlider(
+        value=sorted((special_settings["yellow_min_radius"], special_settings["yellow_max_radius"])),
+        min=1,
+        max=250,
+        step=1,
+        description="Y radius",
+        continuous_update=False,
+    )
     yellow_min_circularity = widgets.IntSlider(value=special_settings["yellow_min_circularity"], min=0, max=100, step=1, description="Y circle")
     yellow_min_fill = widgets.IntSlider(value=special_settings["yellow_min_fill"], min=0, max=100, step=1, description="Y fill")
 
@@ -254,9 +262,10 @@ def create_special_tuner(
     preview = widgets.Output()
 
     def current_settings() -> dict[str, int]:
+        yellow_min_radius, yellow_max_radius = sorted(yellow_radius.value)
         return {
-            "yellow_min_area": int(yellow_min_area.value),
-            "yellow_min_radius": int(yellow_min_radius.value),
+            "yellow_min_radius": int(yellow_min_radius),
+            "yellow_max_radius": int(yellow_max_radius),
             "yellow_min_circularity": int(yellow_min_circularity.value),
             "yellow_min_fill": int(yellow_min_fill.value),
             "black_min_area": int(black_min_area.value),
@@ -328,7 +337,7 @@ def create_special_tuner(
                 print("Yellow circle: none")
             else:
                 print(
-                    f"Yellow circle: score={yellow_circle['score']:.2f}, fill={yellow_circle['fill']:.2f}, "
+                    f"Yellow circle: area={yellow_circle['area']:.1f}, fill={yellow_circle['fill']:.2f}, "
                     f"circularity={yellow_circle['circularity']:.2f}, radius={yellow_circle['radius']:.1f}, bbox={yellow_circle['bbox']}"
                 )
             if black_rectangle is None:
@@ -339,7 +348,7 @@ def create_special_tuner(
                 short_side = min(width, height)
                 aspect = long_side / max(short_side, 1e-6)
                 print(
-                    f"Black rectangle: score={black_rectangle['score']:.2f}, fill={black_rectangle['fill']:.2f}, "
+                    f"Black rectangle: area={black_rectangle['area']:.1f}, fill={black_rectangle['fill']:.2f}, "
                     f"long={long_side:.1f}, short={short_side:.1f}, aspect={aspect:.2f}, bbox={black_rectangle['bbox']}"
                 )
 
@@ -361,8 +370,7 @@ def create_special_tuner(
     controls = (
         *flatten_hsv_controls(yellow_hsv_controls),
         black_gray_slider,
-        yellow_min_area,
-        yellow_min_radius,
+        yellow_radius,
         yellow_min_circularity,
         yellow_min_fill,
         black_min_area,
@@ -386,7 +394,7 @@ def create_special_tuner(
         widgets.HBox([black_gray_slider]),
         widgets.HBox([save_black_gray_button]),
         widgets.HTML("<b>Yellow token circle</b>"),
-        widgets.HBox([yellow_min_area, yellow_min_radius]),
+        widgets.HBox([yellow_radius]),
         widgets.HBox([yellow_min_circularity, yellow_min_fill]),
         widgets.HTML("<b>Black token rectangle</b>"),
         widgets.HBox([black_min_area, black_min_fill]),

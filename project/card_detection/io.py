@@ -113,8 +113,8 @@ def save_special_settings(path: Path, settings: dict[str, int]) -> None:
     merged = DEFAULT_SPECIAL_SETTINGS.copy()
     merged.update({key: int(value) for key, value in settings.items() if key in merged})
     path.write_text(
-        f"Yellow min area: {merged['yellow_min_area']}\n"
         f"Yellow min radius: {merged['yellow_min_radius']}\n"
+        f"Yellow max radius: {merged['yellow_max_radius']}\n"
         f"Yellow min circularity: {merged['yellow_min_circularity']}\n"
         f"Yellow min fill: {merged['yellow_min_fill']}\n"
         f"Black min area: {merged['black_min_area']}\n"

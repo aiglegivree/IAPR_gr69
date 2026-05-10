@@ -4,5 +4,5 @@ Close iter: 0
 Min fill: 15
 Min score: 150
 Angle step: 2
-Max outside: 10
+Max outside: 4
 Max candidates per region: 12

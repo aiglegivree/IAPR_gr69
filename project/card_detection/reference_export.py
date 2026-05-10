@@ -35,29 +35,25 @@ def create_reference_card_labeler(
     items = [item for group in groups for item in group["items"]]
     save_output = widgets.Output()
 
-    def save_cards(_button=None):
-        saved_paths = []
-        for item in items:
-            fallback = f"card_{item['source'].stem}_{item['index']:02d}"
-            label = safe_card_label(item["label_widget"].value, fallback)
-            output_path = next_available_path(output_dir / f"{label}.png")
-            crop_bgr = cv2.cvtColor(item["crop_rgb"], cv2.COLOR_RGB2BGR)
-            cv2.imwrite(str(output_path), crop_bgr)
-            saved_paths.append(output_path)
+    def save_card(item: dict) -> Path:
+        fallback = f"card_{item['source'].stem}_{item['index']:02d}"
+        label = safe_card_label(item["label_widget"].value, fallback)
+        output_path = next_available_path(output_dir / f"{label}.png")
+        crop_bgr = cv2.cvtColor(item["crop_rgb"], cv2.COLOR_RGB2BGR)
+        cv2.imwrite(str(output_path), crop_bgr)
+        return output_path
 
+    def save_card_from_button(button):
+        item = button.card_item
+        output_path = save_card(item)
         with save_output:
             save_output.clear_output()
-            print(f"Saved {len(saved_paths)} cards to {output_dir}")
-            for path in saved_paths:
-                print(path.name)
-
-    save_button = widgets.Button(description="Save labeled cards", button_style="success", icon="save")
-    save_button.on_click(save_cards)
+            print(f"Saved {output_path.name} to {output_dir}")
 
     if not items:
         return widgets.HTML("No reference cards detected.")
 
-    return widgets.VBox([widgets.VBox([reference_image_group(group) for group in groups]), save_button, save_output])
+    return widgets.VBox([widgets.VBox([reference_image_group(group, save_card_from_button) for group in groups]), save_output])
 
 
 def display_reference_card_labeler(*args, **kwargs) -> None:
@@ -110,7 +106,7 @@ def extract_reference_card_items(*args, **kwargs) -> list[dict]:
     return [item for group in extract_reference_card_groups(*args, **kwargs) for item in group["items"]]
 
 
-def reference_image_group(group: dict):
+def reference_image_group(group: dict, save_handler):
     overlay_widget = widgets.Image(
         value=cv2.imencode(".png", cv2.cvtColor(group["overlay"], cv2.COLOR_RGB2BGR))[1].tobytes(),
         format="png",
@@ -120,21 +116,24 @@ def reference_image_group(group: dict):
         [
             widgets.HTML(f"<h4>{group['source'].name}</h4>"),
             overlay_widget,
-            widgets.VBox([reference_card_row(item) for item in group["items"]]),
+            widgets.VBox([reference_card_row(item, save_handler) for item in group["items"]]),
         ],
         layout=widgets.Layout(margin="0 0 18px 0"),
     )
 
 
-def reference_card_row(item: dict):
+def reference_card_row(item: dict, save_handler):
     image_widget = widgets.Image(
         value=cv2.imencode(".png", cv2.cvtColor(item["crop_rgb"], cv2.COLOR_RGB2BGR))[1].tobytes(),
         format="png",
         width=130,
     )
     details = widgets.HTML(f"<b>{item['source'].name}</b><br>{item['title']}")
+    save_button = widgets.Button(description="Save", button_style="success", icon="save", layout=widgets.Layout(width="90px"))
+    save_button.card_item = item
+    save_button.on_click(save_handler)
     return widgets.HBox(
-        [image_widget, widgets.VBox([details, item["label_widget"]])],
+        [image_widget, widgets.VBox([details, item["label_widget"], save_button])],
         layout=widgets.Layout(align_items="center", margin="0 0 10px 0"),
     )
 
