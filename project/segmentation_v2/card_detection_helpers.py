@@ -5,24 +5,6 @@ from pathlib import Path
 from PIL import Image
 
 def extract_hsl_channels(img):
-    """
-    Extract HSL channels from the input image.
-
-    Args
-    ----
-    img: np.ndarray (M, N, C)
-        Input image of shape MxN and C channels.
-    
-    Return
-    ------
-    data_h: np.ndarray (M, N)
-        Hue channel of input image
-    data_s: np.ndarray (M, N)
-        Saturation channel of input image
-    data_l: np.ndarray (M, N)
-        Lightness channel of input image
-    """
-
     M, N, C = np.shape(img)
     data_h = np.zeros((M, N))
     data_s = np.zeros((M, N))
@@ -35,6 +17,21 @@ def extract_hsl_channels(img):
     data_s = hlsimg[:, :, 2].astype(np.float32) / 255 * 100
 
     return data_h, data_s, data_l
+
+def extract_hsv_channels(img):
+    M, N, C = np.shape(img)
+
+    data_h = np.zeros((M, N))
+    data_s = np.zeros((M, N))
+    data_v = np.zeros((M, N))
+
+    hsvimg = cv2.cvtColor(img, cv2.COLOR_RGB2HSV)
+
+    data_h = hsvimg[:, :, 0].astype(np.float32) * 2
+    data_s = hsvimg[:, :, 1].astype(np.float32) / 255 * 100
+    data_v = hsvimg[:, :, 2].astype(np.float32) / 255 * 100
+
+    return data_h, data_s, data_v
 
 def plot_colors_histo(img, func, labels):
     channels = func(img=img)
@@ -71,20 +68,62 @@ def plot_colors_histo(img, func, labels):
     plt.tight_layout()
     plt.show()
 
-def mask(lower_white_1, upper_white_1, lower_white_2, upper_white_2, lower_white_3, upper_white_3, img_color):
-    # Set three HSL threshold ranges and combine them into one mask
+def mask(lower_white_1,upper_white_1,img_color,lower_white_2=None,upper_white_2=None,lower_white_3=None,upper_white_3=None,n_masks=3):
+    
+    if n_masks not in [1, 2, 3]:
+        raise ValueError("n_masks must be 1, 2, or 3")
 
     img_hls = cv2.cvtColor(np.array(img_color), cv2.COLOR_RGB2HLS)
+
     img_hsl_regular = np.dstack((
-        img_hls[:, :, 0].astype(np.float32) * 2,
-        img_hls[:, :, 2].astype(np.float32) / 255 * 100,
-        img_hls[:, :, 1].astype(np.float32) / 255 * 100,
+        img_hls[:, :, 0].astype(np.float32) * 2,        # H
+        img_hls[:, :, 2].astype(np.float32) / 255 * 100, # S
+        img_hls[:, :, 1].astype(np.float32) / 255 * 100  # L
     ))
-    white_mask_1 = np.all((img_hsl_regular >= lower_white_1) & (img_hsl_regular <= upper_white_1), axis=2)
-    white_mask_2 = np.all((img_hsl_regular >= lower_white_2) & (img_hsl_regular <= upper_white_2), axis=2)
-    white_mask_3 = np.all((img_hsl_regular >= lower_white_3) & (img_hsl_regular <= upper_white_3), axis=2)
-    white_mask = white_mask_1 | white_mask_2 | white_mask_3
-    return white_mask_1, white_mask_2, white_mask_3, white_mask
+
+    ranges = [
+        (lower_white_1, upper_white_1),
+        (lower_white_2, upper_white_2),
+        (lower_white_3, upper_white_3)
+    ]
+
+    masks = []
+
+    for i in range(n_masks):
+        lower, upper = ranges[i]
+
+        lower = np.array(lower, dtype=np.float32)
+        upper = np.array(upper, dtype=np.float32)
+
+        current_mask = np.all(
+            (img_hsl_regular >= lower) & (img_hsl_regular <= upper),
+            axis=2
+        )
+
+        masks.append(current_mask)
+
+    combined_mask = masks[0].copy()
+
+    for m in masks[1:]:
+        combined_mask = combined_mask | m
+
+    return masks, combined_mask
+
+
+def grayscale_mask(img_color, threshold=127, invert=False):
+    img_array = np.array(img_color)
+
+    if img_array.ndim == 3:
+        gray = cv2.cvtColor(img_array, cv2.COLOR_RGB2GRAY)
+    else:
+        gray = img_array.copy()
+
+    if invert:
+        _, mask = cv2.threshold(gray, threshold, 255, cv2.THRESH_BINARY_INV)
+    else:
+        _, mask = cv2.threshold(gray, threshold, 255, cv2.THRESH_BINARY)
+
+    return mask
 
 def min_area_filter(white_mask_u8, min_area):
     
@@ -128,6 +167,7 @@ def close(kernel_size ,iterations, frame):
     kernel = np.ones((kernel_size, kernel_size), np.uint8)
     closed_frame = cv2.morphologyEx(frame, cv2.MORPH_CLOSE, kernel,iterations=iterations)
     return closed_frame
+
 def erode(kernel_size ,iterations, frame):
     kernel = np.ones((kernel_size, kernel_size), np.uint8)
     eroded_frame = cv2.erode(frame, kernel, iterations=iterations)
@@ -146,15 +186,34 @@ def show_cards_on_frame(img_color, edges):
     plt.axis("off")
     plt.show()
 
+def equalize_hist_rgb(img_color):
+
+    img_array = np.array(img_color)
+
+  
+    img_ycrcb = cv2.cvtColor(img_array, cv2.COLOR_RGB2YCrCb)
+
+    img_ycrcb[:, :, 0] = cv2.equalizeHist(img_ycrcb[:, :, 0])
+
+    img_equalized = cv2.cvtColor(img_ycrcb, cv2.COLOR_YCrCb2RGB)
+
+    return img_equalized
+
+
+def remove_side_white(white_mask, border_width=1):
+    _, labels = cv2.connectedComponents(white_mask.astype(np.uint8))
+
+    bw = border_width
+    border_labels = np.unique(np.r_[
+        labels[:bw, :].ravel(),
+        labels[-bw:, :].ravel(),
+        labels[:, :bw].ravel(),
+        labels[:, -bw:].ravel()
+    ])
+
+    return white_mask & ~np.isin(labels, border_labels)
+
 def dark_frames_segmentation_pipeline(img_color):
-    '''    lower_white_1 = np.array([20.0, 0.0, 40.0])
-    upper_white_1 = np.array([40.0, 100.0, 100.0])
-
-    lower_white_2 = np.array([10, 0.0, 80.0])
-    upper_white_2 = np.array([50, 100.0, 100.0])
-
-    lower_white_3 = np.array([250, 0.0, 80.0])
-    upper_white_3 = np.array([330, 100.0, 100.0])'''
     lower_white_1 = np.array([15.0, 0.0, 60.0])
     upper_white_1 = np.array([40.0, 100.0, 100.0])
 
@@ -164,9 +223,7 @@ def dark_frames_segmentation_pipeline(img_color):
     lower_white_3 = np.array([230, 0.0, 80.0])
     upper_white_3 = np.array([330, 100.0, 100.0])
 
-
-
-    white_mask_1, white_mask_2, white_mask_3, white_mask = mask(lower_white_1, upper_white_1, lower_white_2, upper_white_2, lower_white_3, upper_white_3, img_color)
+    masks, white_mask = mask(lower_white_1, upper_white_1, img_color,lower_white_2, upper_white_2, lower_white_3, upper_white_3, n_masks=3)
     white_mask_u8 = white_mask.astype(np.uint8) * 255
     closed_frame = close(3,5, white_mask_u8)
     clean_mask = min_area_filter(closed_frame, min_area=10000)
@@ -176,7 +233,24 @@ def dark_frames_segmentation_pipeline(img_color):
     opened_mask = open(5,15,filled_mask)
     clean_filled_mask = min_area_filter(opened_mask, min_area=100000)
     edges = cv2.Canny(clean_filled_mask * 255, 0, 0)
-    return edges
+    return  masks,edges
+
+def white_frames_segmentation_pipeline(img_color):
+    lower_white_1 = np.array([10, 5, 5])
+    upper_white_1 = np.array([360, 100, 100])
+
+    enhanced_img = enhance_image(img_color)
+    masks, white_mask = mask(lower_white_1, upper_white_1, enhanced_img,n_masks=1)
+    framed_morph_mask = black_contours(white_mask)
+    filled_mask = fill_cards(framed_morph_mask)
+    open_frame = open(5,25, filled_mask)
+    clean_mask = min_area_filter(open_frame, min_area=80000)
+    white_mask_no_border=remove_side_white(clean_mask, border_width=20)
+    edges = cv2.Canny(white_mask_no_border * 255, 0, 0)
+    show_cards_on_frame(img_color, edges)
+    return  masks,edges
+
+
 
 def save_inside_edges(img_color, edges, image_name, output_dir="extracted_images"):
     output_dir = Path(output_dir)
@@ -214,3 +288,25 @@ def save_inside_edges(img_color, edges, image_name, output_dir="extracted_images
         saved_paths.append(save_path)
 
     return saved_paths
+
+def enhance_image(img_color):
+    img = np.array(img_color).copy()
+
+    denoised = cv2.medianBlur(img, 5)
+
+    lab = cv2.cvtColor(denoised, cv2.COLOR_RGB2LAB)
+    L, A, B = cv2.split(lab)
+
+    clahe = cv2.createCLAHE(
+        clipLimit=10.0,
+        tileGridSize=(8, 8)
+    )
+    L_enhanced = clahe.apply(L)
+
+    lab_enhanced = cv2.merge([L_enhanced, A, B])
+    enhanced = cv2.cvtColor(lab_enhanced, cv2.COLOR_LAB2RGB)
+
+    blur = cv2.GaussianBlur(enhanced, (0, 0), 1.5)
+    sharpened = cv2.addWeighted(enhanced, 1.5, blur, -0.5, 0)
+
+    return sharpened
