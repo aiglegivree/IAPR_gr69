@@ -68,23 +68,46 @@ def plot_colors_histo(img, func, labels):
     plt.tight_layout()
     plt.show()
 
-def mask(lower_white_1,upper_white_1,img_color,lower_white_2=None,upper_white_2=None,lower_white_3=None,upper_white_3=None,n_masks=3):
-    
+def mask(
+    lower_white_1,
+    upper_white_1,
+    img_color,
+    lower_white_2=None,
+    upper_white_2=None,
+    lower_white_3=None,
+    upper_white_3=None,
+    n_masks=3,
+    space="hsl",   # default stays HSL
+):
     if n_masks not in [1, 2, 3]:
         raise ValueError("n_masks must be 1, 2, or 3")
 
-    img_hls = cv2.cvtColor(np.array(img_color), cv2.COLOR_RGB2HLS)
+    space = space.lower()
 
-    img_hsl_regular = np.dstack((
-        img_hls[:, :, 0].astype(np.float32) * 2,        # H
-        img_hls[:, :, 2].astype(np.float32) / 255 * 100, # S
-        img_hls[:, :, 1].astype(np.float32) / 255 * 100  # L
-    ))
+    img_rgb = np.array(img_color)
+
+    if space == "hsl":
+        img_hls = cv2.cvtColor(img_rgb, cv2.COLOR_RGB2HLS)
+
+        img_converted = np.dstack((
+            img_hls[:, :, 0].astype(np.float32) * 2,          # H: 0-360
+            img_hls[:, :, 2].astype(np.float32) / 255 * 100,  # S: 0-100
+            img_hls[:, :, 1].astype(np.float32) / 255 * 100   # L: 0-100
+        ))
+
+    elif space == "hsv":
+        img_hsv = cv2.cvtColor(img_rgb, cv2.COLOR_RGB2HSV)
+
+        img_converted = img_hsv.astype(np.float32)
+        # H: 0-179, S: 0-255, V: 0-255
+
+    else:
+        raise ValueError("space must be 'hsl' or 'hsv'")
 
     ranges = [
         (lower_white_1, upper_white_1),
         (lower_white_2, upper_white_2),
-        (lower_white_3, upper_white_3)
+        (lower_white_3, upper_white_3),
     ]
 
     masks = []
@@ -92,11 +115,14 @@ def mask(lower_white_1,upper_white_1,img_color,lower_white_2=None,upper_white_2=
     for i in range(n_masks):
         lower, upper = ranges[i]
 
+        if lower is None or upper is None:
+            raise ValueError(f"Mask {i+1} lower/upper bounds are missing")
+
         lower = np.array(lower, dtype=np.float32)
         upper = np.array(upper, dtype=np.float32)
 
         current_mask = np.all(
-            (img_hsl_regular >= lower) & (img_hsl_regular <= upper),
+            (img_converted >= lower) & (img_converted <= upper),
             axis=2
         )
 
@@ -105,7 +131,7 @@ def mask(lower_white_1,upper_white_1,img_color,lower_white_2=None,upper_white_2=
     combined_mask = masks[0].copy()
 
     for m in masks[1:]:
-        combined_mask = combined_mask | m
+        combined_mask |= m
 
     return masks, combined_mask
 
