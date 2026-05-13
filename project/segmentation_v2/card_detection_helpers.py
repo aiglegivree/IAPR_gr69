@@ -77,32 +77,26 @@ def mask(
     lower_white_3=None,
     upper_white_3=None,
     n_masks=3,
-    space="hsl",   # default stays HSL
+    space="hls",
 ):
     if n_masks not in [1, 2, 3]:
         raise ValueError("n_masks must be 1, 2, or 3")
 
     space = space.lower()
-
     img_rgb = np.array(img_color)
 
-    if space == "hsl":
-        img_hls = cv2.cvtColor(img_rgb, cv2.COLOR_RGB2HLS)
-
-        img_converted = np.dstack((
-            img_hls[:, :, 0].astype(np.float32) * 2,          # H: 0-360
-            img_hls[:, :, 2].astype(np.float32) / 255 * 100,  # S: 0-100
-            img_hls[:, :, 1].astype(np.float32) / 255 * 100   # L: 0-100
-        ))
+    if space == "hls":
+        # OpenCV HLS order:
+        # H: 0-180, L: 0-255, S: 0-255
+        img_converted = cv2.cvtColor(img_rgb, cv2.COLOR_RGB2HLS).astype(np.float32)
 
     elif space == "hsv":
-        img_hsv = cv2.cvtColor(img_rgb, cv2.COLOR_RGB2HSV)
-
-        img_converted = img_hsv.astype(np.float32)
-        # H: 0-179, S: 0-255, V: 0-255
+        # OpenCV HSV order:
+        # H: 0-180, S: 0-255, V: 0-255
+        img_converted = cv2.cvtColor(img_rgb, cv2.COLOR_RGB2HSV).astype(np.float32)
 
     else:
-        raise ValueError("space must be 'hsl' or 'hsv'")
+        raise ValueError("space must be 'hls' or 'hsv'")
 
     ranges = [
         (lower_white_1, upper_white_1),
@@ -336,3 +330,5 @@ def enhance_image(img_color):
     sharpened = cv2.addWeighted(enhanced, 1.5, blur, -0.5, 0)
 
     return sharpened
+
+
