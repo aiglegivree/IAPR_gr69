@@ -3,6 +3,8 @@ import cv2
 import matplotlib.pyplot as plt
 from pathlib import Path
 from PIL import Image
+from collections import defaultdict
+
 
 def extract_hsl_channels(img):
     M, N, C = np.shape(img)
@@ -332,3 +334,292 @@ def enhance_image(img_color):
     return sharpened
 
 
+import cv2
+import numpy as np
+
+def find_circle_hough(mask, expected_radius, radius_tolerance=5, min_score=0.5):
+    """
+    Returns:
+        None if no reliable circle is found
+
+        otherwise:
+        {
+            "center": (x, y),
+            "radius": r,
+            "score": score,
+            "fill_score": fill_score,
+            "radius_error": radius_error,
+        }
+    """
+
+    binary_mask = (mask > 0).astype(np.uint8)
+
+    img = binary_mask * 255
+    img = cv2.medianBlur(img, 5)
+
+    circles = cv2.HoughCircles(
+        img,
+        cv2.HOUGH_GRADIENT,
+        dp=1.2,
+        minDist=expected_radius * 2,
+        param1=100,
+        param2=15,
+        minRadius=int(expected_radius - radius_tolerance),
+        maxRadius=int(expected_radius + radius_tolerance),
+    )
+
+    if circles is None:
+        return None
+
+    circles = np.round(circles[0]).astype(int)
+
+    best_circle = None
+    best_score = -np.inf
+
+    for x, y, r in circles:
+        circle_mask = np.zeros_like(binary_mask, dtype=np.uint8)
+
+        cv2.circle(
+            circle_mask,
+            (int(x), int(y)),
+            int(r),
+            1,
+            -1
+        )
+
+        circle_area = np.sum(circle_mask)
+
+        if circle_area == 0:
+            continue
+
+        foreground_inside = np.sum(binary_mask & circle_mask)
+        fill_score = foreground_inside / circle_area
+
+        radius_error = abs(r - expected_radius) / expected_radius
+
+        # Higher is better
+        score = fill_score - radius_error
+
+        if score > best_score:
+            best_score = score
+            best_circle = {
+                "center": (int(x), int(y)),
+                "radius": int(r),
+                "score": float(score),
+                "fill_score": float(fill_score),
+                "radius_error": float(radius_error),
+            }
+
+    if best_circle is None or best_circle["score"] < min_score:
+        return None
+
+    return best_circle
+
+def mask_center(mask):
+    mask = (mask > 0).astype(np.uint8)
+
+    M = cv2.moments(mask)
+
+    if M["m00"] == 0:
+        return None  # no foreground pixels
+
+    cx = M["m10"] / M["m00"]
+    cy = M["m01"] / M["m00"]
+
+    return (cx, cy)
+
+import cv2
+import numpy as np
+
+def biggest_object(mask):
+    mask = (mask > 0).astype(np.uint8)
+
+    num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(mask)
+
+    if num_labels <= 1:
+        return None  # no foreground object
+
+    # label 0 is background, so ignore it
+    areas = stats[1:, cv2.CC_STAT_AREA]
+    biggest_label = 1 + np.argmax(areas)
+
+    biggest_mask = (labels == biggest_label).astype(np.uint8)
+
+    return biggest_mask
+
+def keep_objects_surrounded_by_white(mask, white_mask, min_white_ratio, ring_radius):
+    object_mask = (mask > 0).astype(np.uint8)
+    white_mask = (white_mask > 0).astype(np.uint8)
+    kept_mask = np.zeros_like(object_mask, dtype=np.uint8)
+    object_scores = []
+
+    num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(object_mask, connectivity=8)
+    kernel = cv2.getStructuringElement(
+        cv2.MORPH_ELLIPSE,
+        (2 * ring_radius + 1, 2 * ring_radius + 1),
+    )
+
+    for label in range(1, num_labels):
+        current_object = (labels == label).astype(np.uint8)
+        surrounding_area = cv2.dilate(current_object, kernel, iterations=1)
+        surrounding_ring = (surrounding_area > 0) & (current_object == 0)
+        ring_area = int(surrounding_ring.sum())
+
+        if ring_area == 0:
+            white_ratio = 0.0
+        else:
+            white_ratio = float((white_mask[surrounding_ring] > 0).sum() / ring_area)
+
+        object_scores.append({
+            "label": label,
+            "area": int(stats[label, cv2.CC_STAT_AREA]),
+            "white_ratio": white_ratio,
+            "kept": white_ratio >= min_white_ratio,
+        })
+
+        if white_ratio >= min_white_ratio:
+            kept_mask[current_object > 0] = 1
+
+    return kept_mask, object_scores
+
+
+from collections import defaultdict
+import numpy as np
+import cv2
+
+
+def get_holes(mask, min_hole_area=1):
+    """
+    Return a binary mask of holes inside foreground shapes.
+
+    Parameters
+    ----------
+    mask : np.ndarray
+        Binary mask where shapes are foreground/white and background is black.
+    min_hole_area : int
+        Minimum number of pixels for a hole to be kept.
+
+    Returns
+    -------
+    hole_mask : np.ndarray
+        Binary mask where hole pixels are 1 and everything else is 0.
+    """
+
+    # Ensure binary mask: foreground = 1, background = 0
+    fg = (mask > 0).astype(np.uint8)
+
+    # Label foreground shapes
+    num_shapes, shape_labels = cv2.connectedComponents(fg, connectivity=8)
+
+    # Background mask
+    bg = 1 - fg
+
+    # Label background components
+    num_bg, bg_labels = cv2.connectedComponents(bg, connectivity=8)
+
+    # Output mask
+    hole_mask = np.zeros_like(fg, dtype=np.uint8)
+
+    h, w = mask.shape[:2]
+
+    for bg_label in range(1, num_bg):
+        component = bg_labels == bg_label
+
+        # Ignore background components touching the image border
+        touches_border = (
+            component[0, :].any() or
+            component[-1, :].any() or
+            component[:, 0].any() or
+            component[:, -1].any()
+        )
+
+        if touches_border:
+            continue
+
+        hole_area = np.count_nonzero(component)
+
+        if hole_area < min_hole_area:
+            continue
+
+        # Find which foreground shape surrounds this hole
+        component_uint8 = component.astype(np.uint8)
+
+        dilated = cv2.dilate(
+            component_uint8,
+            np.ones((3, 3), np.uint8),
+            iterations=1
+        )
+
+        neighboring_shape_labels = np.unique(shape_labels[dilated.astype(bool)])
+        neighboring_shape_labels = neighboring_shape_labels[neighboring_shape_labels != 0]
+
+        if len(neighboring_shape_labels) == 0:
+            continue
+
+        # If it has a neighboring foreground shape, treat it as a hole
+        hole_mask[component] = 1
+
+    return hole_mask
+
+def filter_shapes_by_dilated_ring_overlap_binary(
+    mask,
+    white_mask,
+    dilation_radius=5,
+    min_white_pixels=10,
+):
+    """
+    Keep shapes whose dilation ring overlaps enough white pixels
+    in a binary white_mask.
+    """
+
+    binary = (mask > 0).astype(np.uint8)
+    white_binary = white_mask > 0
+
+    num_labels, labels, stats_cc, _ = cv2.connectedComponentsWithStats(
+        binary,
+        connectivity=8
+    )
+
+    filtered_mask = np.zeros_like(binary, dtype=np.uint8)
+
+    ksize = 2 * dilation_radius + 1
+
+    kernel_types = {
+        "ellipse": cv2.MORPH_ELLIPSE,
+        "rect": cv2.MORPH_RECT,
+        "cross": cv2.MORPH_CROSS,
+    }
+
+    kernel = np.ones((ksize, ksize), dtype=np.uint8
+    )
+    h, w = binary.shape
+    for label_id in range(1, num_labels):
+        x = stats_cc[label_id, cv2.CC_STAT_LEFT]
+        y = stats_cc[label_id, cv2.CC_STAT_TOP]
+        bw = stats_cc[label_id, cv2.CC_STAT_WIDTH]
+        bh = stats_cc[label_id, cv2.CC_STAT_HEIGHT]
+        area = stats_cc[label_id, cv2.CC_STAT_AREA]
+
+        x0 = max(x - dilation_radius, 0)
+        y0 = max(y - dilation_radius, 0)
+        x1 = min(x + bw + dilation_radius, w)
+        y1 = min(y + bh + dilation_radius, h)
+
+        local_shape = (labels[y0:y1, x0:x1] == label_id).astype(np.uint8)
+
+        local_dilated = cv2.dilate(local_shape, kernel, iterations=1)
+
+        # Only new pixels added by dilation
+        dilation_ring = (local_dilated == 1) & (local_shape == 0)
+
+        local_white = white_binary[y0:y1, x0:x1]
+
+        white_pixels_in_ring = np.count_nonzero(
+            dilation_ring & local_white
+        )
+        keep = white_pixels_in_ring >= min_white_pixels
+
+        if keep:
+            filtered_mask[labels == label_id] = 255
+
+    return filtered_mask

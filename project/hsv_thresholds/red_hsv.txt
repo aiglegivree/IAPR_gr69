@@ -1,0 +1,8 @@
+lower_hsv_1 = np.array([0, 80, 180])
+upper_hsv_1 = np.array([8, 255, 255])
+lower_hsv_2 = np.array([170, 80, 180])
+upper_hsv_2 = np.array([179, 255, 255])
+mask = cv2.bitwise_or(
+    cv2.inRange(hsv, lower_hsv_1, upper_hsv_1),
+    cv2.inRange(hsv, lower_hsv_2, upper_hsv_2),
+)

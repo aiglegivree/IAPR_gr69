@@ -1,2 +1,0 @@
-lower_hsv = np.array([69, 41, 171])
-upper_hsv = np.array([127, 255, 255])

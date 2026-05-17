@@ -1,4 +1,0 @@
-lower_hsv_1 = np.array([0, 160, 187])
-upper_hsv_1 = np.array([4, 219, 255])
-lower_hsv_2 = np.array([179, 160, 187])
-upper_hsv_2 = np.array([179, 219, 255])
