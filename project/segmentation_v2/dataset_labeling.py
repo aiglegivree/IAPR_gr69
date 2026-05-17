@@ -86,15 +86,32 @@ class DatasetLabeler:
             )
             button.grid(row=idx // 5, column=idx % 5, padx=4, pady=4)
 
-        stop_button = tk.Button(root, text="Stop", width=18, command=self.stop)
-        stop_button.pack(pady=(0, 16))
+        action_frame = tk.Frame(root)
+        action_frame.pack(pady=(0, 16))
+
+        delete_button = tk.Button(
+            action_frame,
+            text="Delete Image",
+            width=18,
+            command=self.delete_current_symbol,
+        )
+        delete_button.grid(row=0, column=0, padx=4)
+
+        stop_button = tk.Button(action_frame, text="Stop", width=18, command=self.stop)
+        stop_button.grid(row=0, column=1, padx=4)
 
         self.bind_number_keys()
+        self.bind_action_keys()
         self.show_current_symbol()
 
     def bind_number_keys(self):
         for label in CARD_LABELS[:10]:
             self.root.bind(label, lambda event, value=label: self.label_current_symbol(value))
+
+    def bind_action_keys(self):
+        self.root.bind("<Delete>", lambda event: self.delete_current_symbol())
+        self.root.bind("<BackSpace>", lambda event: self.delete_current_symbol())
+        self.root.bind("d", lambda event: self.delete_current_symbol())
 
     def first_unlabeled_index(self):
         for idx, path in enumerate(self.symbol_paths):
@@ -138,6 +155,26 @@ class DatasetLabeler:
             if self.symbol_paths[self.current_index].name not in self.labels:
                 break
             self.current_index += 1
+
+        self.show_current_symbol()
+
+    def delete_current_symbol(self):
+        if self.current_index >= len(self.symbol_paths):
+            return
+
+        path = self.symbol_paths[self.current_index]
+
+        try:
+            path.unlink()
+        except FileNotFoundError:
+            pass
+        except OSError as error:
+            messagebox.showerror("Delete Failed", f"Could not delete {path.name}:\n{error}")
+            return
+
+        self.labels.pop(path.name, None)
+        save_labels(self.labels)
+        del self.symbol_paths[self.current_index]
 
         self.show_current_symbol()
 
