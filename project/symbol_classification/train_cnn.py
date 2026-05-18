@@ -7,32 +7,32 @@ import numpy as np
 import torch
 from PIL import Image, ImageOps
 from torch import nn
-from torch.utils.data import DataLoader, Dataset, Subset
+from torch.utils.data import DataLoader, Dataset
 from torchvision import transforms
 
 
 PROJECT_DIR = Path(__file__).resolve().parents[1]
-DEFAULT_DATASET_DIR = PROJECT_DIR / "symbols_dataset"
+DEFAULT_DATASET_DIR = PROJECT_DIR / "augm_symbols_dataset"
 DEFAULT_OUTPUT_PATH = PROJECT_DIR / "symbol_classification" / "symbol_cnn.pt"
 IMAGE_SIZE = 64
 MAX_ALLOWED_PARAMETERS = 12_000_000
 
 
 class SymbolDataset(Dataset):
-    def __init__(self, dataset_dir, class_to_idx):
+    def __init__(self, dataset_dir, class_to_idx, labels_file):
         self.dataset_dir = Path(dataset_dir)
         self.class_to_idx = class_to_idx
-        labels_path = self.dataset_dir / "labels.json"
+        labels_path = self.dataset_dir / labels_file
         labels = json.loads(labels_path.read_text())
 
         self.samples = [
-            (self.dataset_dir / filename, class_to_idx[label])
-            for filename, label in sorted(labels.items())
+            (self.dataset_dir / filename, class_to_idx[label_from_entry(entry)])
+            for filename, entry in sorted(labels.items())
             if (self.dataset_dir / filename).exists()
         ]
 
         if not self.samples:
-            raise ValueError(f"No labeled symbol images found in {self.dataset_dir}")
+            raise ValueError(f"No labeled symbol images found using {labels_path}")
 
         self.transform = transforms.Compose(
             [
@@ -92,6 +92,12 @@ def count_trainable_parameters(model):
     return sum(parameter.numel() for parameter in model.parameters() if parameter.requires_grad)
 
 
+def label_from_entry(entry):
+    if isinstance(entry, dict):
+        return entry["label"]
+    return entry
+
+
 def seed_everything(seed):
     random.seed(seed)
     np.random.seed(seed)
@@ -99,30 +105,23 @@ def seed_everything(seed):
     torch.cuda.manual_seed_all(seed)
 
 
-def load_class_mapping(dataset_dir):
-    labels = json.loads((Path(dataset_dir) / "labels.json").read_text())
-    classes = sorted(set(labels.values()), key=lambda value: (not value.isdigit(), value))
+def load_class_mapping(dataset_dir, labels_files=("train.json", "test.json")):
+    dataset_dir = Path(dataset_dir)
+    labels = []
+
+    for labels_file in labels_files:
+        labels_path = dataset_dir / labels_file
+        if not labels_path.exists():
+            continue
+        entries = json.loads(labels_path.read_text())
+        labels.extend(label_from_entry(entry) for entry in entries.values())
+
+    if not labels:
+        entries = json.loads((dataset_dir / "labels.json").read_text())
+        labels.extend(label_from_entry(entry) for entry in entries.values())
+
+    classes = sorted(set(labels), key=lambda value: (not value.isdigit(), value))
     return {label: idx for idx, label in enumerate(classes)}
-
-
-def stratified_split(dataset, val_fraction, seed):
-    label_to_indices = {}
-    for idx, (_, label) in enumerate(dataset.samples):
-        label_to_indices.setdefault(label, []).append(idx)
-
-    rng = random.Random(seed)
-    train_indices = []
-    val_indices = []
-
-    for indices in label_to_indices.values():
-        rng.shuffle(indices)
-        val_count = max(1, round(len(indices) * val_fraction))
-        val_indices.extend(indices[:val_count])
-        train_indices.extend(indices[val_count:])
-
-    rng.shuffle(train_indices)
-    rng.shuffle(val_indices)
-    return train_indices, val_indices
 
 
 def run_epoch(model, loader, criterion, optimizer, device):
@@ -236,20 +235,20 @@ def train(args):
     seed_everything(args.seed)
     device = choose_device(args)
 
-    class_to_idx = load_class_mapping(args.dataset_dir)
+    class_to_idx = load_class_mapping(args.dataset_dir, (args.train_labels, args.val_labels))
     idx_to_class = {idx: label for label, idx in class_to_idx.items()}
-    dataset = SymbolDataset(args.dataset_dir, class_to_idx)
-    train_indices, val_indices = stratified_split(dataset, args.val_fraction, args.seed)
+    train_dataset = SymbolDataset(args.dataset_dir, class_to_idx, args.train_labels)
+    val_dataset = SymbolDataset(args.dataset_dir, class_to_idx, args.val_labels)
 
     train_loader = DataLoader(
-        Subset(dataset, train_indices),
+        train_dataset,
         batch_size=args.batch_size,
         shuffle=True,
         num_workers=args.num_workers,
         pin_memory=device.type == "cuda",
     )
     val_loader = DataLoader(
-        Subset(dataset, val_indices),
+        val_dataset,
         batch_size=args.batch_size,
         shuffle=False,
         num_workers=args.num_workers,
@@ -271,7 +270,10 @@ def train(args):
     best_val_acc = 0.0
     args.output.parent.mkdir(parents=True, exist_ok=True)
 
-    print(f"Training on {device} with {len(train_indices)} train and {len(val_indices)} val images")
+    print(f"Dataset: {args.dataset_dir}")
+    print(f"Train labels: {args.train_labels}")
+    print(f"Validation labels: {args.val_labels}")
+    print(f"Training on {device} with {len(train_dataset)} train and {len(val_dataset)} val images")
     print(f"Classes: {', '.join(class_to_idx.keys())}")
     print(f"Trainable parameters: {parameter_count:,}")
 
@@ -349,12 +351,13 @@ def predict_image(image, checkpoint_path=DEFAULT_OUTPUT_PATH):
 def parse_args():
     parser = argparse.ArgumentParser(description="Train a CNN for UNO symbol classification.")
     parser.add_argument("--dataset-dir", type=Path, default=DEFAULT_DATASET_DIR)
+    parser.add_argument("--train-labels", default="train.json")
+    parser.add_argument("--val-labels", default="test.json")
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT_PATH)
     parser.add_argument("--epochs", type=int, default=25)
     parser.add_argument("--batch-size", type=int, default=64)
     parser.add_argument("--lr", type=float, default=1e-3)
     parser.add_argument("--weight-decay", type=float, default=1e-4)
-    parser.add_argument("--val-fraction", type=float, default=0.2)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--num-workers", type=int, default=0)
     parser.add_argument("--device", choices=("cuda", "cpu", "auto"), default="cuda")

@@ -459,8 +459,21 @@ def keep_objects_surrounded_by_white(mask, white_mask, min_white_ratio, ring_rad
         (2 * ring_radius + 1, 2 * ring_radius + 1),
     )
 
+    height, width = object_mask.shape
+
     for label in range(1, num_labels):
-        current_object = (labels == label).astype(np.uint8)
+        x = int(stats[label, cv2.CC_STAT_LEFT])
+        y = int(stats[label, cv2.CC_STAT_TOP])
+        w = int(stats[label, cv2.CC_STAT_WIDTH])
+        h = int(stats[label, cv2.CC_STAT_HEIGHT])
+
+        left = max(0, x - ring_radius)
+        top = max(0, y - ring_radius)
+        right = min(width, x + w + ring_radius)
+        bottom = min(height, y + h + ring_radius)
+
+        label_roi = labels[top:bottom, left:right]
+        current_object = (label_roi == label).astype(np.uint8)
         surrounding_area = cv2.dilate(current_object, kernel, iterations=1)
         surrounding_ring = (surrounding_area > 0) & (current_object == 0)
         ring_area = int(surrounding_ring.sum())
@@ -468,7 +481,8 @@ def keep_objects_surrounded_by_white(mask, white_mask, min_white_ratio, ring_rad
         if ring_area == 0:
             white_ratio = 0.0
         else:
-            white_ratio = float((white_mask[surrounding_ring] > 0).sum() / ring_area)
+            white_roi = white_mask[top:bottom, left:right]
+            white_ratio = float((white_roi[surrounding_ring] > 0).sum() / ring_area)
 
         object_scores.append({
             "label": label,
@@ -478,7 +492,8 @@ def keep_objects_surrounded_by_white(mask, white_mask, min_white_ratio, ring_rad
         })
 
         if white_ratio >= min_white_ratio:
-            kept_mask[current_object > 0] = 1
+            kept_mask_roi = kept_mask[top:bottom, left:right]
+            kept_mask_roi[current_object > 0] = 1
 
     return kept_mask, object_scores
 

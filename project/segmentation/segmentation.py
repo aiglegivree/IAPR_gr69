@@ -342,22 +342,39 @@ def extract_merged_symbol_records(mask, color, merge_distance=30, patch_size=150
     )
     merged_mask = cv2.dilate(binary_mask, merge_kernel, iterations=1)
 
-    num_labels, labels, _, _ = cv2.connectedComponentsWithStats(
+    num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(
         merged_mask,
         connectivity=8,
     )
 
     records = []
+    height, width = binary_mask.shape
     for label in range(1, num_labels):
-        component_region = labels == label
-        original_pixels = binary_mask & component_region.astype(np.uint8)
+        x = int(stats[label, cv2.CC_STAT_LEFT])
+        y = int(stats[label, cv2.CC_STAT_TOP])
+        w = int(stats[label, cv2.CC_STAT_WIDTH])
+        h = int(stats[label, cv2.CC_STAT_HEIGHT])
 
-        if not np.any(original_pixels):
+        left = max(0, x - merge_distance)
+        top = max(0, y - merge_distance)
+        right = min(width, x + w + merge_distance)
+        bottom = min(height, y + h + merge_distance)
+
+        label_roi = labels[top:bottom, left:right]
+        binary_roi = binary_mask[top:bottom, left:right]
+        original_pixels_roi = binary_roi & (label_roi == label).astype(np.uint8)
+
+        if not np.any(original_pixels_roi):
             continue
 
-        ys, xs = np.where(original_pixels > 0)
-        center_xy = (float(xs.mean()), float(ys.mean()))
-        symbol_patch = crop_centered_binary_mask(original_pixels, center_xy, patch_size)
+        ys, xs = np.where(original_pixels_roi > 0)
+        center_xy_roi = (float(xs.mean()), float(ys.mean()))
+        center_xy = (center_xy_roi[0] + left, center_xy_roi[1] + top)
+        symbol_patch = crop_centered_binary_mask(
+            original_pixels_roi,
+            center_xy_roi,
+            patch_size,
+        )
         records.append([symbol_patch, color, center_xy])
 
     return records
