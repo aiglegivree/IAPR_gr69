@@ -6,14 +6,8 @@ from PIL import Image
 import segmentation
 
 
-training_set = False
-
-INPUT_IMAGE_DIR = segmentation.TRAIN_DIR if training_set else segmentation.TEST_DIR
-SYMBOL_DATASET_DIR = (
-    segmentation.BASE_DIR / "symbols_dataset"
-    if training_set
-    else segmentation.BASE_DIR / "symbols_dataset_testing"
-)
+INPUT_IMAGE_DIR = segmentation.TRAIN_DIR
+SYMBOL_DATASET_DIR = segmentation.BASE_DIR / "symbols_dataset"
 LABELS_PATH = SYMBOL_DATASET_DIR / "labels.json"
 
 
