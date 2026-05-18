@@ -6,7 +6,7 @@ from PIL import Image
 import segmentation
 
 
-training_set = True
+training_set = False
 
 INPUT_IMAGE_DIR = segmentation.TRAIN_DIR if training_set else segmentation.TEST_DIR
 SYMBOL_DATASET_DIR = (

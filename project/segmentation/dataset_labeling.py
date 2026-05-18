@@ -8,7 +8,7 @@ from PIL import Image, ImageTk
 
 
 BASE_DIR = Path(__file__).resolve().parents[1]
-training_set = True
+training_set = False
 
 DATASET_DIR = (
     BASE_DIR / "symbols_dataset"
