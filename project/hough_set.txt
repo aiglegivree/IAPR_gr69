@@ -1,9 +1,0 @@
-Threshold: 36
-Min line: 22
-Max gap: 52
-Split gap: 100
-Min peri: 10
-Min width: 65
-Min height: 115
-Max width: 85
-Max height: 145

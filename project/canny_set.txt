@@ -1,6 +1,0 @@
-Blur: 1
-Low: 40
-High: 59
-Min len: 210
-Close size: 12
-Close iter: 10
