@@ -85,11 +85,6 @@ def load_hsv_ranges(color):
     return ranges
 
 
-def load_training_image(image_name):
-    image_path = TRAIN_DIR / image_name
-    return Image.open(image_path).convert("RGB")
-
-
 def normalize_image_input(image):
     if isinstance(image, Image.Image):
         return image.convert("RGB")
@@ -397,7 +392,3 @@ def detect_symbols(image):
         )
 
     return detected_symbols
-
-
-if __name__ == "__main__":
-    print(detect_symbols(load_training_image("L1000973.jpg")))
