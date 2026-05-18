@@ -1,7 +1,7 @@
 from sklearn.cluster import DBSCAN
 import numpy as np
 
-def clustering(card_points, eps=600, min_samples=1):
+def clustering(card_points, eps=525, min_samples=1):
     card_points = np.asarray(card_points)
     clusters = DBSCAN(eps=eps, min_samples=min_samples).fit(card_points)
     cluster_centers = []
@@ -18,7 +18,6 @@ def cluster_2_player_mapping(cluster_centers, cluster_labels, W, H, buffer=200):
     cluster_labels = np.asarray(cluster_labels)
     unique_cluster_labels = np.unique(cluster_labels)
     player_positions = np.array([
-        [W // 2, H // 2],
         [W // 2, H - buffer],
         [W - buffer, H // 2],
         [W // 2, buffer],
@@ -26,7 +25,7 @@ def cluster_2_player_mapping(cluster_centers, cluster_labels, W, H, buffer=200):
         
     ])
     distances = np.linalg.norm(cluster_centers[:, np.newaxis] - player_positions, axis=2)
-    closest_players = np.argmin(distances, axis=1)
+    closest_players = np.argmin(distances, axis=1) + 1
     map_cluster2player = dict(zip(unique_cluster_labels, closest_players))
     player_ids = [map_cluster2player.get(label, None) for label in cluster_labels]
 
