@@ -1,10 +1,13 @@
+import json
+
 import cv2
 from PIL import Image
 
 import segmentation
 
 
-SYMBOL_DATASET_DIR = segmentation.BASE_DIR / "symbols_dataset"
+SYMBOL_DATASET_DIR = segmentation.BASE_DIR / "symbols_dataset_testing"
+LABELS_PATH = SYMBOL_DATASET_DIR / "labels.json"
 
 
 def reset_symbol_dataset_dir():
@@ -12,6 +15,9 @@ def reset_symbol_dataset_dir():
 
     for old_symbol_path in SYMBOL_DATASET_DIR.glob("symbol_*.png"):
         old_symbol_path.unlink()
+
+    with LABELS_PATH.open("w") as file:
+        json.dump({}, file, indent=2, sort_keys=True)
 
 
 def show_progress(current, total, width=30):
@@ -31,7 +37,7 @@ def build_symbol_dataset():
     print(f"Using {acceleration_backend} acceleration for dataset build")
 
     symbol_number = 1
-    image_paths = sorted(segmentation.TRAIN_DIR.glob("*.jpg"))
+    image_paths = sorted(segmentation.TEST_DIR.glob("*.jpg"))
     total_images = len(image_paths)
 
     for image_idx, image_path in enumerate(image_paths, start=1):

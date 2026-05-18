@@ -13,6 +13,7 @@ import card_detection_helpers as helpers
 
 BASE_DIR = Path(__file__).resolve().parents[1]
 TRAIN_DIR = BASE_DIR / "iapr-26-uno-vision-challenge" / "train_images"
+TEST_DIR = BASE_DIR / "iapr-26-uno-vision-challenge" / "test_images"
 HSV_DIR = BASE_DIR / "hsv_thresholds"
 
 COLORS = ["blue", "green", "red", "yellow", "black", "white"]
