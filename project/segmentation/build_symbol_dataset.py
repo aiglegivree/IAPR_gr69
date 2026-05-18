@@ -6,7 +6,14 @@ from PIL import Image
 import segmentation
 
 
-SYMBOL_DATASET_DIR = segmentation.BASE_DIR / "symbols_dataset_testing"
+training_set = True
+
+INPUT_IMAGE_DIR = segmentation.TRAIN_DIR if training_set else segmentation.TEST_DIR
+SYMBOL_DATASET_DIR = (
+    segmentation.BASE_DIR / "symbols_dataset"
+    if training_set
+    else segmentation.BASE_DIR / "symbols_dataset_testing"
+)
 LABELS_PATH = SYMBOL_DATASET_DIR / "labels.json"
 
 
@@ -37,7 +44,7 @@ def build_symbol_dataset():
     print(f"Using {acceleration_backend} acceleration for dataset build")
 
     symbol_number = 1
-    image_paths = sorted(segmentation.TEST_DIR.glob("*.jpg"))
+    image_paths = sorted(INPUT_IMAGE_DIR.glob("*.jpg"))
     total_images = len(image_paths)
 
     for image_idx, image_path in enumerate(image_paths, start=1):

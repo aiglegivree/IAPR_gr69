@@ -8,7 +8,13 @@ from PIL import Image, ImageTk
 
 
 BASE_DIR = Path(__file__).resolve().parents[1]
-DATASET_DIR = BASE_DIR / "symbols_dataset"
+training_set = True
+
+DATASET_DIR = (
+    BASE_DIR / "symbols_dataset"
+    if training_set
+    else BASE_DIR / "symbols_dataset_testing"
+)
 LABELS_PATH = DATASET_DIR / "labels.json"
 
 CARD_LABELS = [
