@@ -353,25 +353,35 @@ def show_token_assignment(debug, buffer=200):
     names = ["p1", "p2", "p3", "p4"]
     for name, (x, y) in zip(names, anchors):
         ax.scatter(x, y, s=140, marker="x")
-        ax.text(x + 10, y + 10, name, color="white", fontsize=12, bbox={"facecolor": "black", "alpha": 0.6})
+        ax.annotate(
+            name,
+            xy=(x, y),
+            xytext=(x + 96, y - 70),
+            color="black",
+            fontsize=12,
+            fontweight="bold",
+            bbox={"facecolor": "#ffe680", "edgecolor": "black", "alpha": 0.95, "pad": 3},
+            arrowprops={"arrowstyle": "-", "color": "#d9b300", "lw": 1.8},
+        )
 
     if debug["token_center"] is not None:
         x, y = debug["token_center"]
         ax.scatter(x, y, s=180, marker="o", edgecolors="yellow", facecolors="none", linewidths=2)
-        ax.text(
-            x + 10,
-            y - 10,
+        ax.annotate(
             f"token -> {debug['active_player']}",
+            xy=(x, y),
+            xytext=(x + 70, y - 60),
             color="yellow",
             fontsize=12,
-            bbox={"facecolor": "black", "alpha": 0.6},
+            bbox={"facecolor": "black", "alpha": 0.65, "pad": 2},
+            arrowprops={"arrowstyle": "-", "color": "yellow", "lw": 1.4},
         )
 
     ax.set_title("Token attribution to the active player")
     ax.axis("off")
 
 
-def show_pipeline_assignments(debug, show_image=True, remove_duplicates=False):
+def show_pipeline_assignments(debug, show_image=True, remove_duplicates=False, show_anchors=False, buffer=200):
     """Plot center/player assignments and detected card labels.
 
     If show_image is False, the assignments are drawn on a blank canvas instead
@@ -397,22 +407,141 @@ def show_pipeline_assignments(debug, show_image=True, remove_duplicates=False):
     else:
         records_to_plot = debug["records"]
 
+    for index, record in enumerate(records_to_plot):
+        x, y = record["center"]
+        player_id = record.get("player_id")
+        label = record["card"]
+        color = colors.get(player_id, "white")
+        ax.scatter(x, y, c=color, s=70)
+        ax.annotate(
+            f"{label} | p{player_id}" if player_id is not None else label,
+            xy=(x, y),
+            xytext=(x + 52, y - 44),
+            color="white",
+            fontsize=9,
+            bbox={"facecolor": "black", "alpha": 0.65, "pad": 2},
+            arrowprops={"arrowstyle": "-", "color": color, "lw": 1.2},
+        )
+
+    width = debug["width"]
+    height = debug["height"]
+    anchors = {
+        "center": (width / 2, height / 2),
+        "p1": (width / 2, height - buffer),
+        "p2": (width - buffer, height / 2),
+        "p3": (width / 2, buffer),
+        "p4": (buffer, height / 2),
+    }
+    for name, (x, y) in anchors.items():
+        marker_color = "cyan" if name == "center" else "white"
+        ax.scatter(x, y, s=150, marker="x", c=marker_color, linewidths=2)
+        ax.annotate(
+            name,
+            xy=(x, y),
+            xytext=(x + 96, y - 70),
+            color="black",
+            fontsize=11,
+            fontweight="bold",
+            bbox={
+                "facecolor": "#8fe8ff" if name == "center" else "#ffe680",
+                "edgecolor": "black",
+                "alpha": 0.95,
+                "pad": 3,
+            },
+            arrowprops={
+                "arrowstyle": "-",
+                "color": "#00bcd4" if name == "center" else "#d9b300",
+                "lw": 1.8,
+            },
+        )
+
+    ax.set_title("Detected cards with center/player attribution")
+    ax.axis("off")
+
+
+def show_full_pipeline_frame(debug, buffer=200, remove_duplicates=False):
+    """Show one combined frame with card attribution and token attribution."""
+
+    image_rgb = debug["image_rgb"]
+    width = debug["width"]
+    height = debug["height"]
+    anchors = np.array(
+        [
+            [width // 2, height - buffer],
+            [width - buffer, height // 2],
+            [width // 2, buffer],
+            [buffer, height // 2],
+        ],
+        dtype=np.float32,
+    )
+
+    fig, ax = plt.subplots(figsize=(10, 7))
+    ax.imshow(image_rgb)
+
+    colors = {0: "cyan", 1: "lime", 2: "orange", 3: "magenta", 4: "red", None: "white"}
+    records_to_plot = []
+    if remove_duplicates:
+        center_records = [record for record in debug["records"] if record.get("player_id") == 0]
+        if center_records:
+            records_to_plot.append(max(center_records, key=lambda record: record["confidence"]))
+        for kept_records in debug["kept_by_player"].values():
+            records_to_plot.extend(kept_records)
+    else:
+        records_to_plot = debug["records"]
+
     for record in records_to_plot:
         x, y = record["center"]
         player_id = record.get("player_id")
         label = record["card"]
         color = colors.get(player_id, "white")
         ax.scatter(x, y, c=color, s=70)
-        ax.text(
-            x + 8,
-            y + 8,
+        ax.annotate(
             f"{label} | p{player_id}" if player_id is not None else label,
+            xy=(x, y),
+            xytext=(x + 52, y - 44),
             color="white",
             fontsize=9,
-            bbox={"facecolor": "black", "alpha": 0.6},
+            bbox={"facecolor": "black", "alpha": 0.65, "pad": 2},
+            arrowprops={"arrowstyle": "-", "color": color, "lw": 1.2},
         )
 
-    ax.set_title("Detected cards with center/player attribution")
+    anchor_points = {
+        "center": (width / 2, height / 2),
+        "p1": (width / 2, height - buffer),
+        "p2": (width - buffer, height / 2),
+        "p3": (width / 2, buffer),
+        "p4": (buffer, height / 2),
+    }
+    for name, (x, y) in anchor_points.items():
+        marker_color = "cyan" if name == "center" else "white"
+        box_color = "#8fe8ff" if name == "center" else "#ffe680"
+        line_color = "#00bcd4" if name == "center" else "#d9b300"
+        ax.scatter(x, y, s=150, marker="x", c=marker_color, linewidths=2)
+        ax.annotate(
+            name,
+            xy=(x, y),
+            xytext=(x + 96, y - 70),
+            color="black",
+            fontsize=11,
+            fontweight="bold",
+            bbox={"facecolor": box_color, "edgecolor": "black", "alpha": 0.95, "pad": 3},
+            arrowprops={"arrowstyle": "-", "color": line_color, "lw": 1.8},
+        )
+
+    if debug["token_center"] is not None:
+        x, y = debug["token_center"]
+        ax.scatter(x, y, s=180, marker="o", edgecolors="yellow", facecolors="none", linewidths=2)
+        ax.annotate(
+            f"token -> {debug['active_player']}",
+            xy=(x, y),
+            xytext=(x + 70, y - 60),
+            color="yellow",
+            fontsize=12,
+            bbox={"facecolor": "black", "alpha": 0.65, "pad": 2},
+            arrowprops={"arrowstyle": "-", "color": "yellow", "lw": 1.4},
+        )
+
+    ax.set_title("Full pipeline result on one frame")
     ax.axis("off")
 
 
