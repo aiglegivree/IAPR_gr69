@@ -1,0 +1,21 @@
+# Whole-project Python requirements
+#
+# For GPU training/inference, install a CUDA-enabled PyTorch build.
+# Example for CUDA 12.4:
+# pip install --index-url https://download.pytorch.org/whl/cu124 torch torchvision
+#
+# If you install torch/torchvision with the command above, you can then install
+# the rest with:
+# pip install -r requirements.txt --no-deps
+
+numpy
+pillow
+scikit-learn
+opencv-python
+matplotlib
+tqdm
+torch
+torchvision
+
+# tkinter is used by project/segmentation/dataset_labeling.py and comes from the
+# standard library on normal Python installations, so it is not listed here.
