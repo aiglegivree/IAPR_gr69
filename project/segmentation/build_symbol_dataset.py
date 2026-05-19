@@ -3,11 +3,14 @@ import json
 import cv2
 from PIL import Image
 
-import segmentation
+try:
+    from . import segmentation_utils
+except ImportError:
+    import segmentation_utils
 
 
-INPUT_IMAGE_DIR = segmentation.TRAIN_DIR
-SYMBOL_DATASET_DIR = segmentation.BASE_DIR / "symbols_dataset"
+INPUT_IMAGE_DIR = segmentation_utils.TRAIN_DIR
+SYMBOL_DATASET_DIR = segmentation_utils.BASE_DIR / "symbols_dataset"
 LABELS_PATH = SYMBOL_DATASET_DIR / "labels.json"
 
 
@@ -33,8 +36,8 @@ def show_progress(current, total, width=30):
 def build_symbol_dataset():
     reset_symbol_dataset_dir()
 
-    acceleration_backend = segmentation.configure_acceleration()
-    segmentation.set_acceleration_backend(acceleration_backend)
+    acceleration_backend = segmentation_utils.configure_acceleration()
+    segmentation_utils.set_acceleration_backend(acceleration_backend)
     print(f"Using {acceleration_backend} acceleration for dataset build")
 
     symbol_number = 1
@@ -44,7 +47,7 @@ def build_symbol_dataset():
     for image_idx, image_path in enumerate(image_paths, start=1):
         show_progress(image_idx, total_images)
         img_color = Image.open(image_path).convert("RGB")
-        detected_symbols = segmentation.detect_symbols(img_color)
+        detected_symbols = segmentation_utils.detect_symbols(img_color)
 
         for symbol_patch, _, _ in detected_symbols:
             output_path = SYMBOL_DATASET_DIR / f"symbol_{symbol_number}.png"
