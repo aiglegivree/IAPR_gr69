@@ -62,10 +62,18 @@ def progress(iterable, total, desc):
 
 
 def configure_segmentation(backend):
+    """Configure segmentation when the optional acceleration API is available."""
+
     if backend == "auto":
-        backend = segmentation.configure_acceleration()
-    segmentation.set_acceleration_backend(backend)
-    return backend
+        if hasattr(segmentation, "configure_acceleration"):
+            return segmentation.configure_acceleration()
+        return "cpu"
+
+    if hasattr(segmentation, "set_acceleration_backend"):
+        segmentation.set_acceleration_backend(backend)
+        return backend
+
+    return "cpu" if backend in {"cpu", "auto"} else f"{backend} (unsupported, using default)"
 
 
 def empty_submission_row(image_id):
@@ -92,7 +100,6 @@ def generate_submission(
     classifier = Classifier(model_path, device=classifier_device, cpu=classifier_cpu)
 
     print(f"Classifier device: {classifier.device}")
-    print(f"Checkpoint validation accuracy: {classifier.checkpoint.get('val_acc', 'unknown')}")
     print(f"Segmentation backend: {backend}")
 
     image_ids = [path.stem for path in sorted(image_dir.glob("*.jpg"))]
