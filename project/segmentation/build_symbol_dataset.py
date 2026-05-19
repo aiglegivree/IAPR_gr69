@@ -36,10 +36,6 @@ def show_progress(current, total, width=30):
 def build_symbol_dataset():
     reset_symbol_dataset_dir()
 
-    acceleration_backend = segmentation_utils.configure_acceleration()
-    segmentation_utils.set_acceleration_backend(acceleration_backend)
-    print(f"Using {acceleration_backend} acceleration for dataset build")
-
     symbol_number = 1
     image_paths = sorted(INPUT_IMAGE_DIR.glob("*.jpg"))
     total_images = len(image_paths)

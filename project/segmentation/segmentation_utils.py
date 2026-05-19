@@ -1,8 +1,5 @@
 from pathlib import Path
-import os
 import re
-
-os.environ.setdefault("MPLCONFIGDIR", "/tmp/matplotlib")
 
 import cv2
 import numpy as np
@@ -20,42 +17,10 @@ WHITE_SURROUND_THRESHOLD = 0.5
 SURROUND_RING_RADIUS = 20
 SYMBOL_PATCH_SIZE = 150
 SYMBOL_MERGE_DISTANCE = 40
-ACCELERATION_BACKEND = "cpu"
-
-def configure_acceleration():
-    """Select the fastest available OpenCV backend for mask operations."""
-    try:
-        cuda_ready = (
-            hasattr(cv2, "cuda")
-            and cv2.cuda.getCudaEnabledDeviceCount() > 0
-            and hasattr(cv2, "cuda_GpuMat")
-            and hasattr(cv2.cuda, "cvtColor")
-            and hasattr(cv2.cuda, "inRange")
-            and hasattr(cv2.cuda, "bitwise_or")
-            and hasattr(cv2.cuda, "bitwise_and")
-        )
-    except cv2.error:
-        cuda_ready = False
-
-    if cuda_ready:
-        return "cuda"
-
-    if cv2.ocl.haveOpenCL():
-        cv2.ocl.setUseOpenCL(True)
-        if cv2.ocl.useOpenCL():
-            return "opencl"
-
-    return "cpu"
-
-
-def set_acceleration_backend(backend):
-    """Set the global OpenCV backend used by thresholding functions."""
-    global ACCELERATION_BACKEND
-    ACCELERATION_BACKEND = backend
 
 
 def load_hsv_ranges(color):
-    """Load one or more HSV threshold ranges for a named UNO color."""
+    """Load one or more HSV threshold ranges for a named card color."""
     threshold_path = HSV_DIR / f"{color}_hsv.txt"
     text = threshold_path.read_text()
     ranges = []
@@ -106,7 +71,7 @@ def normalize_image_input(image):
 
 
 def min_area_filter(mask, min_area):
-    """Keep connected components whose area is at least the requested size."""
+    """Keep objects whose area is at least the requested size."""
     num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(
         mask,
         connectivity=8,
@@ -122,13 +87,13 @@ def min_area_filter(mask, min_area):
 
 
 def morph_open(mask, kernel_size=3, iterations=1):
-    """Apply morphological opening to remove small foreground noise."""
+    """Apply morphological opening."""
     kernel = np.ones((kernel_size, kernel_size), np.uint8)
     return cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel, iterations=iterations)
 
 
 def morph_close(mask, kernel_size=3, iterations=1):
-    """Apply morphological closing to fill small foreground gaps."""
+    """Apply morphological closing."""
     kernel = np.ones((kernel_size, kernel_size), np.uint8)
     return cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel, iterations=iterations)
 
@@ -136,30 +101,6 @@ def morph_close(mask, kernel_size=3, iterations=1):
 def color_mask_from_threshold_file(img_color, color):
     """Threshold an RGB image into a binary mask for one configured color."""
     img_array = np.array(img_color)
-
-    if ACCELERATION_BACKEND == "cuda":
-        gpu_img = cv2.cuda_GpuMat()
-        gpu_img.upload(img_array)
-        hsv = cv2.cuda.cvtColor(gpu_img, cv2.COLOR_RGB2HSV)
-        combined_mask = cv2.cuda_GpuMat()
-        combined_mask.upload(np.zeros(img_array.shape[:2], dtype=np.uint8))
-
-        for lower, upper in load_hsv_ranges(color):
-            current_mask = cv2.cuda.inRange(hsv, lower, upper)
-            combined_mask = cv2.cuda.bitwise_or(combined_mask, current_mask)
-
-        return combined_mask.download()
-
-    if ACCELERATION_BACKEND == "opencl":
-        hsv = cv2.cvtColor(cv2.UMat(img_array), cv2.COLOR_RGB2HSV)
-        combined_mask = cv2.UMat(np.zeros(img_array.shape[:2], dtype=np.uint8))
-
-        for lower, upper in load_hsv_ranges(color):
-            current_mask = cv2.inRange(hsv, lower, upper)
-            combined_mask = cv2.bitwise_or(combined_mask, current_mask)
-
-        return combined_mask.get()
-
     hsv = cv2.cvtColor(img_array, cv2.COLOR_RGB2HSV)
     combined_mask = np.zeros(hsv.shape[:2], dtype=np.uint8)
 
@@ -171,7 +112,7 @@ def color_mask_from_threshold_file(img_color, color):
 
 
 def get_color_masks(img_color):
-    """Build cleaned binary masks for every configured UNO color."""
+    """Build cleaned binary masks for every configured color."""
     color_masks = {
         color: color_mask_from_threshold_file(img_color, color)
         for color in COLORS
@@ -185,7 +126,7 @@ def get_color_masks(img_color):
 
 
 def image_token_type(img_color):
-    """Classify the center token as yellow or grey from image brightness."""
+    """Classify the center token as yellow or grey from image mean gray level."""
     grey_mean = float(np.array(img_color, dtype=np.float32).mean())
     if grey_mean < 185:
         return "yellow"
@@ -298,7 +239,11 @@ def get_token_center(image):
     if token_mask is None:
         return None
 
-    return mask_center(token_mask)
+    center = mask_center(token_mask)
+    if center is None:
+        return None
+
+    return tuple(int(round(coord)) for coord in center)
 
 
 def remove_token_from_color_masks(img_color, color_masks):
@@ -499,26 +444,8 @@ def extract_symbols_mask_per_color(img_color, color_masks):
     """Extract cleaned symbol masks from the holes of each colored card mask."""
     symbols_mask_per_color = {}
     img_array = np.array(img_color)
-
-    if ACCELERATION_BACKEND == "cuda":
-        gpu_img = cv2.cuda_GpuMat()
-        gpu_img.upload(img_array)
-        hsv = cv2.cuda.cvtColor(gpu_img, cv2.COLOR_RGB2HSV)
-        white_by_hsv = cv2.cuda.inRange(
-            hsv,
-            np.array([0, 0, 0], dtype=np.uint8),
-            np.array([179, 40, 255], dtype=np.uint8),
-        ).download()
-    elif ACCELERATION_BACKEND == "opencl":
-        hsv = cv2.cvtColor(cv2.UMat(img_array), cv2.COLOR_RGB2HSV)
-        white_by_hsv = cv2.inRange(
-            hsv,
-            np.array([0, 0, 0], dtype=np.uint8),
-            np.array([179, 40, 255], dtype=np.uint8),
-        ).get()
-    else:
-        hsv = cv2.cvtColor(img_array, cv2.COLOR_RGB2HSV)
-        white_by_hsv = (hsv[:, :, 1] <= 40).astype(np.uint8)
+    hsv = cv2.cvtColor(img_array, cv2.COLOR_RGB2HSV)
+    white_by_hsv = (hsv[:, :, 1] <= 40).astype(np.uint8)
 
     for color, mask in color_masks.items():
         if color == "white":
@@ -528,7 +455,7 @@ def extract_symbols_mask_per_color(img_color, color_masks):
         hole_mask_filtered = filter_shapes_by_dilated_ring_overlap_binary(
             hole_mask,
             color_masks["white"],
-            dilation_radius=20,
+            dilation_radius=25,
             min_white_pixels=50,
         )
         hole_mask_filtered = cv2.dilate(
@@ -633,7 +560,7 @@ def extract_merged_symbol_records(mask, color, merge_distance=30, patch_size=150
 
 
 def detect_symbols(image):
-    """Detect UNO card symbols and return binary patch, color, center records."""
+    """Detect card symbols and return binary patch, color, and center data."""
     img_color = normalize_image_input(image)
     symbols_mask_per_color = get_symbols_mask_per_color(img_color)
     detected_symbols = []
