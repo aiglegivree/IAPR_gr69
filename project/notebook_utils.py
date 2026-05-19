@@ -1,38 +1,19 @@
-"""Helpers used by result.ipynb."""
-
 import importlib.util
 import json
 from collections import defaultdict
+from collections import Counter
 from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
+import math
 from PIL import Image
 from torch import nn
 from torch.utils.data import DataLoader
 
-from cnn import (
-    DEFAULT_DATASET_DIR,
-    DEFAULT_MODEL_PATH,
-    Classifier,
-    SymbolCNN,
-    SymbolDataset,
-    choose_device,
-    load_class_mapping,
-    load_model,
-    run_epoch,
-    seed_everything,
-)
-from clustering import (
-    PLAYER_ID_TO_COLUMN,
-    active_player_from_token,
-    assign_players,
-    collapse_duplicate_detections,
-    detect_and_classify,
-    prediction_row_for_image,
-    sort_player_cards,
-)
+from cnn import *
+from clustering import *
 
 
 PROJECT_DIR = Path(__file__).resolve().parent
@@ -608,3 +589,98 @@ def find_frame_with_duplicate_collapse(image_dir=DEFAULT_TEST_IMAGES_DIR, classi
             if info["before"] != info["after"]:
                 return image_path, debug
     return None, None
+
+def plot_distribution(name: str, labels: dict, ax: plt.Axes = None) -> plt.Axes:
+    """
+    Draw a bar chart of per-class image counts.
+
+    Parameters
+    ----------
+    name   : chart title
+    labels : {image_filename: class_label}
+    ax     : existing Axes to draw on; a new figure is created if None
+
+    Returns
+    -------
+    The Axes object.
+    """
+    counts  = Counter(labels.values())
+    classes = sorted(counts.keys())
+    values  = [counts[c] for c in classes]
+
+    if ax is None:
+        _, ax = plt.subplots(figsize=(max(6, len(classes) * 0.8), 4))
+
+    bars = ax.bar(classes, values, color="steelblue", edgecolor="white")
+    ax.bar_label(bars, padding=2, fontsize=8)
+    ax.set_title(name)
+    ax.set_xlabel("Class")
+    ax.set_ylabel("Count")
+    ax.set_xticks(range(len(classes)))
+    ax.set_xticklabels(classes, rotation=45, ha="right")
+    ax.set_ylim(0, max(values) * 1.18)
+    return ax
+
+
+def plot_distributions_grid(
+    datasets: list[tuple[str, dict]],
+    cols: int = 2,
+) -> None:
+    """
+    Render bar charts for multiple label dicts side by side in a grid.
+
+    Parameters
+    ----------
+    datasets : list of (title, labels_dict)
+    cols     : number of columns in the grid
+    """
+    rows = math.ceil(len(datasets) / cols)
+    fig, axes = plt.subplots(rows, cols, figsize=(cols * 7, rows * 4))
+    axes = axes.flatten() if hasattr(axes, "flatten") else [axes]
+
+    for ax, (name, labels) in zip(axes, datasets):
+        plot_distribution(name, labels, ax=ax)
+
+    for ax in axes[len(datasets):]:
+        ax.set_visible(False)
+
+    plt.tight_layout()
+    plt.show()
+
+
+def print_split_counts(
+    train_labels: dict,
+    val_labels: dict,
+    train_target: int,
+    val_target: int,
+    num_classes: int,
+    stage: str = "",
+) -> None:
+    """
+    Print a summary table of image counts per split with expected totals.
+
+    Parameters
+    ----------
+    train_labels  : {filename: label} for training
+    val_labels    : {filename: label} for validation
+    train_target  : expected images per class in train
+    val_target    : expected images per class in validation
+    num_classes   : number of symbol classes
+    stage         : optional label prefix (e.g. "Before augmentation")
+    """
+    header = f"  {stage}" if stage else ""
+    total_train = len(train_labels)
+    total_val   = len(val_labels)
+    exp_train   = train_target * num_classes
+    exp_val     = val_target   * num_classes
+
+    ok_train = "✓" if total_train == exp_train else "✗"
+    ok_val   = "✓" if total_val   == exp_val   else "✗"
+
+    print(f"\n{'─'*46}{header}")
+    print(f"  {'Split':<12} {'Images':>8}  {'Expected':>8}  {'OK':>3}")
+    print(f"  {'─'*12} {'─'*8}  {'─'*8}  {'─'*3}")
+    print(f"  {'Train':<12} {total_train:>8}  {exp_train:>8}  {ok_train:>3}")
+    print(f"  {'Validation':<12} {total_val:>8}  {exp_val:>8}  {ok_val:>3}")
+    print(f"  {'TOTAL':<12} {total_train+total_val:>8}  {exp_train+exp_val:>8}")
+    print(f"{'─'*46}")
