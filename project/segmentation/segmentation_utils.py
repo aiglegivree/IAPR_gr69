@@ -455,7 +455,7 @@ def extract_symbols_mask_per_color(img_color, color_masks):
         hole_mask_filtered = filter_shapes_by_dilated_ring_overlap_binary(
             hole_mask,
             color_masks["white"],
-            dilation_radius=25,
+            dilation_radius=20,
             min_white_pixels=50,
         )
         hole_mask_filtered = cv2.dilate(
