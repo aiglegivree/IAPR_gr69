@@ -576,20 +576,6 @@ def show_duplicate_collapse(debug):
         print("  after: ", info["after"] if info["after"] else ["EMPTY"])
 
 
-def find_frame_with_duplicate_collapse(image_dir=DEFAULT_TEST_IMAGES_DIR, classifier=None, limit=50):
-    """Find one image where duplicate deletion changes at least one player hand."""
-
-    if classifier is None:
-        classifier = Classifier()
-
-    image_paths = sorted(Path(image_dir).glob("*.jpg"))[:limit]
-    for image_path in image_paths:
-        debug = build_pipeline_debug(image_path, classifier)
-        for info in debug["collapsed"].values():
-            if info["before"] != info["after"]:
-                return image_path, debug
-    return None, None
-
 def plot_distribution(name: str, labels: dict, ax: plt.Axes = None) -> plt.Axes:
     """
     Draw a bar chart of per-class image counts.
