@@ -1,3 +1,0 @@
-lower_hsv_1 = np.array([0, 0, 60])
-upper_hsv_1 = np.array([179, 40, 170])
-mask = cv2.inRange(hsv, lower_hsv_1, upper_hsv_1)
