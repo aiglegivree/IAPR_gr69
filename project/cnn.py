@@ -17,7 +17,7 @@ from torchvision import transforms
 PROJECT_DIR = Path(__file__).resolve().parent
 
 
-DEFAULT_DATASET_DIR = PROJECT_DIR / "augm_symbols_dataset_1000_r75_25"
+DEFAULT_DATASET_DIR = PROJECT_DIR / "augm_symbols_dataset"
 DEFAULT_MODEL_PATH = PROJECT_DIR / "symbol_cnn.pt"
 
 IMAGE_SIZE = 64

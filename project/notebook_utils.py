@@ -96,7 +96,7 @@ def load_history(history_path=DEFAULT_HISTORY_PATH):
 def train_with_history(
     dataset_dir=DEFAULT_DATASET_DIR,
     train_labels="train.json",
-    val_labels="test.json",
+    val_labels="val.json",
     output_path=DEFAULT_MODEL_PATH,
     history_path=DEFAULT_HISTORY_PATH,
     epochs=10,
@@ -115,6 +115,8 @@ def train_with_history(
     output_path = Path(output_path)
     history_path = Path(history_path)
     device = choose_device(device, cpu)
+    if not (dataset_dir / val_labels).exists() and val_labels == "val.json":
+        val_labels = "test.json"
 
     class_to_idx = load_class_mapping(dataset_dir, (train_labels, val_labels))
     idx_to_class = {idx: label for label, idx in class_to_idx.items()}
@@ -191,7 +193,7 @@ def train_with_history(
 def evaluate_model(
     model_path=DEFAULT_MODEL_PATH,
     dataset_dir=DEFAULT_DATASET_DIR,
-    labels_file="test.json",
+    labels_file="val.json",
     batch_size=64,
     num_workers=0,
     device="auto",
@@ -203,6 +205,9 @@ def evaluate_model(
     model, checkpoint, device = load_model(model_path, device)
     class_to_idx = checkpoint["class_to_idx"]
     idx_to_class = checkpoint["idx_to_class"]
+    dataset_dir = Path(dataset_dir)
+    if not (dataset_dir / labels_file).exists() and labels_file == "val.json":
+        labels_file = "test.json"
     dataset = SymbolDataset(dataset_dir, class_to_idx, labels_file)
     loader = DataLoader(
         dataset,
