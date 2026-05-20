@@ -197,7 +197,7 @@ def evaluate_model(
     device="auto",
     cpu=False,
 ):
-    """Compute accuracy, F1 scores, and confusion matrix on one split."""
+    """Compute accuracy, F1 score, and confusion matrix on one split."""
 
     device = choose_device(device, cpu)
     model, checkpoint, device = load_model(model_path, device)
@@ -229,8 +229,7 @@ def evaluate_model(
 
     metrics = {
         "accuracy": (tp.sum() / matrix.sum().clamp_min(1).float()).item(),
-        "macro_f1": f1.mean().item(),
-        "weighted_f1": ((f1 * support).sum() / support.sum().clamp_min(1)).item(),
+        "f1": f1.mean().item(),
     }
     return metrics, matrix, idx_to_class
 
