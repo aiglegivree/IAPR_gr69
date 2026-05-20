@@ -69,7 +69,25 @@ def overlay_mask(image, mask, color=(255, 0, 255), title=None):
 
 
 
-def ensure_model(model_path=DEFAULT_MODEL_PATH, history_path=DEFAULT_HISTORY_PATH, **train_kwargs):
+def print_model_summary(model_path=DEFAULT_MODEL_PATH, device="auto", cpu=False):
+    """Print the CNN architecture and parameter counts."""
+
+    device = choose_device(device, cpu)
+    model, _, _ = load_model(model_path, device)
+    total_parameters = sum(parameter.numel() for parameter in model.parameters())
+    trainable_parameters = sum(parameter.numel() for parameter in model.parameters() if parameter.requires_grad)
+
+    print(model)
+    print(f"Total parameters: {total_parameters:,}")
+    print(f"Trainable parameters: {trainable_parameters:,}")
+
+
+def ensure_model(
+    model_path=DEFAULT_MODEL_PATH,
+    history_path=DEFAULT_HISTORY_PATH,
+    parameter_count=False,
+    **train_kwargs,
+):
     """Train the CNN only if the model file does not already exist."""
 
     model_path = Path(model_path)
@@ -79,6 +97,13 @@ def ensure_model(model_path=DEFAULT_MODEL_PATH, history_path=DEFAULT_HISTORY_PAT
     if not model_path.exists():
         train_with_history(output_path=model_path, history_path=history_path, **train_kwargs)
         trained_now = True
+
+    if parameter_count:
+        print_model_summary(
+            model_path,
+            device=train_kwargs.get("device", "auto"),
+            cpu=train_kwargs.get("cpu", False),
+        )
 
     history = load_history(history_path)
     return model_path, history_path, history, trained_now
