@@ -642,7 +642,6 @@ def print_split_counts(
     train_labels: dict,
     val_labels: dict,
     train_target: int,
-    val_target: int,
     num_classes: int,
     stage: str = "",
 ) -> None:
@@ -654,7 +653,6 @@ def print_split_counts(
     train_labels  : {filename: label} for training
     val_labels    : {filename: label} for validation
     train_target  : expected images per class in train
-    val_target    : expected images per class in validation
     num_classes   : number of symbol classes
     stage         : optional label prefix (e.g. "Before augmentation")
     """
@@ -662,15 +660,13 @@ def print_split_counts(
     total_train = len(train_labels)
     total_val   = len(val_labels)
     exp_train   = train_target * num_classes
-    exp_val     = val_target   * num_classes
 
     ok_train = "✓" if total_train == exp_train else "✗"
-    ok_val   = "✓" if total_val   == exp_val   else "✗"
 
     print(f"\n{'─'*46}{header}")
     print(f"  {'Split':<12} {'Images':>8}  {'Expected':>8}  {'OK':>3}")
     print(f"  {'─'*12} {'─'*8}  {'─'*8}  {'─'*3}")
     print(f"  {'Train':<12} {total_train:>8}  {exp_train:>8}  {ok_train:>3}")
-    print(f"  {'Validation':<12} {total_val:>8}  {exp_val:>8}  {ok_val:>3}")
-    print(f"  {'TOTAL':<12} {total_train+total_val:>8}  {exp_train+exp_val:>8}")
+    print(f"  {'Validation':<12} {total_val:>8}  {'held-out':>8}  {'-':>3}")
+    print(f"  {'TOTAL':<12} {total_train+total_val:>8}  {exp_train+total_val:>8}")
     print(f"{'─'*46}")

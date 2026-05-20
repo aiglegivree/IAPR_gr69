@@ -91,34 +91,24 @@ def next_available_index(label_dicts: list[dict]) -> int:
 # Target computation
 # ---------------------------------------------------------------------------
 
-def compute_targets(
+def compute_train_target(
     num_classes: int,
     total_train: int = 10000,
-    val_ratio: float = 0.25,
-) -> tuple[int, int]:
+) -> int:
     """
-    Compute per-class image targets for the train and validation splits.
+    Compute the per-class image target for the augmented training split.
 
     The train target is ``total_train // num_classes``.
-    The validation target is derived so that the validation set is
-    approximately ``val_ratio`` of the total dataset size.
 
     Parameters
     ----------
     num_classes : number of distinct symbol classes
     total_train : desired total number of training images
-    val_ratio   : desired fraction of the full dataset for validation
-                  (e.g. 0.25 → 25 %)
-
     Returns
     -------
-    (train_target, val_target)  — per-class counts
+    Training target per class.
     """
-    train_target = total_train // num_classes
-    # val_ratio = val / (train + val)  =>  val = train * ratio / (1 - ratio)
-    val_per_class_exact = train_target * val_ratio / (1.0 - val_ratio)
-    val_target = max(1, round(val_per_class_exact))
-    return train_target, val_target
+    return total_train // num_classes
 
 
 # ---------------------------------------------------------------------------
