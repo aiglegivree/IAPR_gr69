@@ -169,11 +169,11 @@ def _normalize_feature_map(feature_map: np.ndarray) -> np.ndarray:
 
 
 def top_activation_channels(activation: torch.Tensor, max_channels: int | None = 6) -> list[int]:
-    """Pick channels by mean absolute response, optionally keeping them all."""
+    """Pick channels by mean absolute response, or preserve native order when showing all."""
     scores = activation.abs().mean(dim=(1, 2))
     order = torch.argsort(scores, descending=True)
     if max_channels is None:
-        return order.tolist()
+        return list(range(activation.shape[0]))
     return order[: min(max_channels, activation.shape[0])].tolist()
 
 
