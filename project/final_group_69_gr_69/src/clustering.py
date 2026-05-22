@@ -168,7 +168,7 @@ def assign_players(records, width, height, eps=525, buffer=200):
 
 
 def prediction_row_for_image(image_path, classifier, eps=525, buffer=200):
-    """Run the full post-CNN pipeline for one image and return one csv row."""
+    """Run the full pipeline for one image and return one csv row."""
 
     image = Image.open(image_path).convert("RGB")
     image_rgb = np.asarray(image)
